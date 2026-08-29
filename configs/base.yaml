@@ -1,0 +1,183 @@
+# Track 2 run configuration. Version 2.
+# Values marked RULE come from the official problem statement or the starter kit.
+# Do not change them without an organiser ruling recorded in docs/OPEN_QUESTIONS.md.
+
+paths:
+  # Absolute path to the six KuaiRand-Pure CSVs. Overridden by KUAIRAND_DATA_DIR.
+  # The starter kit scripts all accept --data_dir, so no filesystem junction is needed.
+  raw_data_dir: "C:/Users/Lenovo/track2-techjam/data/KuaiRand-Pure/data"
+  starter_dir: "starter"
+  workspace_dir: "workspace"
+  runs_dir: "runs"
+
+dataset:
+  name: kuairand_pure
+  label_column: long_view          # RULE, confirmed at data.py line 5
+  # RULE: fixed date-based splits
+  train_dates: [20220408, 20220421]
+  val_dates:   [20220422, 20220428]
+  test_dates:  [20220429, 20220508]
+  expected_rows:
+    train: 1141112
+    val: 124909
+    test: 170588
+  # The kit's five baseline fields. FIELDS in starter/data.py.
+  baseline_fields: [user_id, video_id, author_id, tab, dur_bucket]
+
+metrics:
+  primary: mean_gauc_ndcg5         # RULE
+  components: [gauc, ndcg@5]       # RULE, confirmed in evaluate.py
+  # From baseline_scores.json. AUTHORITATIVE. Use the validation column locally;
+  # the PDF quotes the test column, which is a different set of numbers.
+  reference_validation:
+    random:          {gauc: 0.4993, ndcg5: 0.4675, primary: 0.4834}
+    item_popularity: {gauc: 0.6387, ndcg5: 0.5227, primary: 0.5807}
+    fm_official:     {gauc: 0.6674, ndcg5: 0.5357, primary: 0.6016}
+    oracle_ceiling:  {gauc: 1.0000, ndcg5: 0.6968, primary: 0.8484}
+  reference_test:
+    random:          {gauc: 0.4996, ndcg5: 0.4511, primary: 0.4753}
+    item_popularity: {gauc: 0.6308, ndcg5: 0.5121, primary: 0.5715}
+    fm_official:     {gauc: 0.6610, ndcg5: 0.5282, primary: 0.5946}
+    oracle_ceiling:  {gauc: 1.0000, ndcg5: 0.7289, primary: 0.8645}
+    seed_std: 0.0008
+  test_composition:
+    users: 23875
+    all_negative_pct: 27.1
+    all_positive_pct: 9.2
+    discriminative_pct: 63.7
+
+convergence:                        # RULE -- implement literally, no cleverness
+  epsilon: 0.002
+  n_consecutive: 3
+  max_iterations: 50
+  max_wall_clock_hours: 6
+  # Never stop voluntarily before convergence fires.
+  # Never continue after it fires.
+  # On the final strike, take the highest-expected-gain untried structural change.
+  allow_early_stop: false
+  # Restart resumes iteration count, strike count and tried-set from the ledger.
+  reset_state_on_restart: false
+
+selection:
+  # RULE: the scored submission is the literal validation-best checkpoint.
+  # Diagnostic folds inform the agent's next proposal. They never override this.
+  authority: official_validation
+  diagnostic_folds:
+    - {fit: [20220408, 20220414], score: [20220415, 20220421]}
+    - {fit: [20220408, 20220417], score: [20220418, 20220421]}
+  refit_on_train_val: false        # pending Q2. Do not enable without a ruling.
+  confirm_seeds: 3                 # for decisions near the measured noise floor
+  default_seeds: 1
+
+leakage:
+  # CRITICAL: data.load() returns test rows WITH labels at index 6, and
+  # baseline.py prints test scores. harness/data.py must strip the test label
+  # and harness/guards.py must filter starter stdout before the agent sees it.
+  strip_test_labels: true
+  filter_starter_stdout: true
+
+  # Never permitted as features. Same-impression outcomes.
+  # Legitimate as auxiliary TRAINING TARGETS in a multi-task setup.
+  deny_columns_as_features:
+    - play_time_ms
+    - is_click
+    - is_like
+    - is_follow
+    - is_comment
+    - is_forward
+    - is_hate
+    - is_profile_enter
+    - profile_stay_time
+    - comment_stay_time
+  # Known before the impression, safe as inputs.
+  allow_log_columns:
+    - user_id
+    - video_id
+    - date
+    - hourmin
+    - time_ms
+    - duration_ms
+    - is_rand
+    - tab
+  # Per-video averages over a month spanning the test window. Excluded.
+  use_video_statistic_file: false
+  use_supplementary_files: false   # Q7
+  use_random_exposure_log: false   # Q8. If allowed, VALIDATION only, never training.
+  # Validation oracle ceiling is 0.8484, so anything near it is a leak.
+  canary_primary_threshold: 0.80
+  enforce_causal_encoding: true
+
+agent:
+  proposals_per_iteration: 1
+  repair_attempts: 1               # one shot, then abandon the candidate
+  analyses_per_iteration_max: 3
+  cache_llm_responses: false       # no caching on the scored run
+  per_iteration_timeout_minutes: 25
+  memory_limit_gb: 8
+  protected_paths:
+    - starter/                     # organiser code, read-only
+    - harness/data.py
+    - harness/guards.py
+    - harness/evaluate.py
+    - harness/submit.py
+    - harness/convergence.py
+    - harness/ledger.py
+    - harness/logger.py
+    - harness/sandbox.py
+    - tests/
+  writable_paths:
+    - harness/features/gen/
+    - harness/models/gen/
+  import_allowlist:
+    - numpy
+    - pandas
+    - scipy
+    - sklearn
+    - lightgbm
+    - math
+    - itertools
+    - collections
+
+# Build order. See CLAUDE.md section 9 and knowledge/methods.md.
+# The organisers published that static feature additions and larger embedding
+# dimensions produce NO gain. The bottleneck is the objective, not features
+# or capacity.
+strategy:
+  known_dead_ends:
+    - "adding the 13 CWM static feature fields: 0.5940 vs 0.5950, no gain"
+    - "embedding dim k = 8/16/32: 0.5895/0.5902/0.5887, flat"
+    - "pure user-side first-order terms: exactly zero effect on within-user ranking"
+  priority_order:
+    1: change_loss_function        # pairwise BPR, listwise softmax. TOP PRIORITY
+    2: user_history_sequences      # completely unused, highest ceiling
+    3: multi_task_auxiliary_heads
+    4: watch_time_censored_loss
+    5: alternative_architectures   # DeepFM/DCN. Deprioritised deliberately
+    6: time_features_and_drift
+    7: unbiased_validation         # log_random as a validation set only
+
+models:
+  seed: 42
+  # FM stays the base architecture. Change its objective, not its size.
+  base: fm
+  fm_config:                       # matches baseline_scores.json fm_official
+    k: 16
+    lr: 0.001
+    batch: 8192
+    max_epochs: 40
+    patience: 4
+  # The open experiment: training list length does not match evaluation
+  # list length (~42 vs ~6 per user). Measure before choosing.
+  list_grouping_candidates: [user_id, "user_id+date", "user_id+session"]
+  ensemble:
+    normalise: within_user_rank    # global normalisation on one model is a no-op
+    tune_weights_once: true
+
+logging:
+  jsonl: true
+  markdown: true
+  record_tokens: true
+  record_wall_clock: true
+  record_git_sha: true
+  # No test metric may appear in any machine-readable log or LLM prompt.
+  forbid_test_metrics_in_logs: true

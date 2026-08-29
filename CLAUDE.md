@@ -377,7 +377,17 @@ The current FM optimises pointwise logloss while both metrics are ranking metric
 - **Pairwise (BPR).** Within a user's impressions, sample positive-negative pairs and optimise `-log(sigmoid(z_pos - z_neg))`.
 - **Listwise softmax.** Softmax over a user's impression list, cross-entropy against the labels.
 
-Implementation note: `FM.step()` already computes gradients cleanly, so a pairwise variant is roughly 40 lines inside the existing class. **The open design question is list construction**: train has ~42 rows per user over 14 days, while evaluation lists are ~6. Grouping by `user_id` alone gives lists 7x longer than at evaluation; grouping by `(user_id, date)` gives ~3. Neither matches. This is a genuine experiment for the agent to run, not something to guess.
+Implementation note: `FM.step()` already computes gradients cleanly, so a pairwise variant is roughly 40 lines inside the existing class. **The open design question is list construction.** Now measured, via `analyse(kind="list_size_profile")`:
+
+| Grouping | Split | Lists | Mean | Median | p90 |
+|---|---|---|---|---|---|
+| `user_id` | train | 26,210 | **43.5** | 31 | 97 |
+| `(user_id, date)` | train | 197,796 | **5.77** | 3 | 14 |
+| `user_id` | valid | 22,377 | **5.58** | 4 | 12 |
+
+**This corrects an earlier claim in this file and in `knowledge/methods.md`,** both of which said `(user_id, date)` gives "~3" and concluded it did not match. Three is the *median*; the mean is 5.77, and the evaluation mean is 5.58. So `(user_id, date)` on train matches the evaluation list length almost exactly, while `user_id` alone is 7.8x too long.
+
+That does not settle the experiment — mean list length is one property and the distributions still differ — but the corpus was steering the agent away from the option the measurement favours. The estimate has been removed from `knowledge/methods.md` rather than replaced, so the agent measures it rather than being handed a conclusion.
 
 **2. User history sequences.** Completely unused. Each user has hundreds to thousands of training interactions. DIN/SIM-style interest modelling is untouched. Highest ceiling, highest build cost.
 

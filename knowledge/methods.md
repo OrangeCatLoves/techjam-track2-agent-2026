@@ -59,13 +59,18 @@ Softmax the scores within a user's impression list and take cross-entropy agains
 
 This is not a detail; it is the experiment.
 
-| Grouping | Mean list size in training | Matches evaluation? |
-|---|---|---|
-| by `user_id` across all 14 train days | ~42 | No, 7x too long |
-| by `(user_id, date)` | ~3 | No, roughly half |
-| by `(user_id, session)` | unknown, needs `time_ms` gaps | Possibly |
+A mismatch between training list length and evaluation list length changes what the objective optimises, so the grouping rule is a real choice with a measurable consequence.
 
-Evaluation lists average ~6. A mismatch between training list length and evaluation list length changes what the objective optimises. Worth measuring directly with `analyse(kind="list_size_profile")` before choosing.
+**Candidate groupings:** `user_id` across all training days; `(user_id, date)`; `(user_id, session)` from `time_ms` gaps.
+
+**Measure them. Do not take a remembered figure for any of them.**
+
+```
+analyse(kind="list_size_profile", split="train")
+analyse(kind="list_size_profile", split="valid")
+```
+
+This section previously carried a table of estimated list sizes. One of those estimates was wrong in a way that pointed away from a promising option: it quoted a median as if it were a mean and concluded from that the grouping did not match. The table has been removed rather than corrected, because the tool answers the question directly in under a second and a number in a document cannot be re-derived when it turns out to be stale.
 
 ### Implementation note
 

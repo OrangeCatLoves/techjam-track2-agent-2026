@@ -414,3 +414,45 @@ the reference figure alongside it, so "expensive" is a comparison it can make ra
 than a word it has to interpret. At ~63 s per experiment, twenty iterations is about
 21 minutes of training — the six-hour ceiling is dominated by LLM latency and
 overhead, not by compute.
+
+
+### D16 — The method corpus contained a wrong number that pointed away from the answer
+
+`knowledge/methods.md` is the corpus the agent retrieves from when proposing. It
+carried this table:
+
+| Grouping | Mean list size in training | Matches evaluation? |
+|---|---|---|
+| by `user_id` | ~42 | No, 7x too long |
+| by `(user_id, date)` | **~3** | **No, roughly half** |
+
+Measured with the `analyse` tool the moment it existed:
+
+| Grouping | Split | Lists | Mean | Median |
+|---|---|---|---|---|
+| `user_id` | train | 26,210 | 43.5 | 31 |
+| `(user_id, date)` | train | 197,796 | **5.77** | **3** |
+| `user_id` | valid | 22,377 | **5.58** | 4 |
+
+Three is the *median*. The mean is 5.77, against an evaluation mean of 5.58 — so
+`(user_id, date)` matches the evaluation list length almost exactly, and the corpus
+was telling the agent it did not.
+
+This is worse than an absent fact. An agent reading that table would have
+deprioritised the grouping the measurement favours, and the corpus is the one input
+we control that is supposed to save it from dead ends rather than create them.
+
+**Fix.** The table is removed from `knowledge/methods.md` rather than corrected, and
+replaced with the two `analyse` calls that answer the question in under a second.
+`CLAUDE.md` §9.2, which is read by humans and not by the agent, carries the measured
+numbers and this correction.
+
+**The general rule this makes concrete.** CLAUDE.md §14 already says never to write a
+number that was not computed by code. The corpus violated it, and the violation was
+invisible until a tool existed to check. Every remaining estimate in
+`knowledge/methods.md` should be treated as suspect until measured.
+
+Nothing about the list-construction experiment is settled by this. Mean length is one
+property and the distributions still differ; `(user_id, date)` produces 7.5x as many
+lists, each far shorter in the tail. It remains the agent's experiment to run — which
+is why the finding lives here and in CLAUDE.md, and not anywhere the agent reads.

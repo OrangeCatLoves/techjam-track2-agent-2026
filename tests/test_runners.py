@@ -243,3 +243,109 @@ def test_a_checkpoint_can_score_the_test_split_without_a_label(splits, tmp_path)
                            splits, 'test', enc)
     assert len(scores) == len(splits['test'])
     assert np.all(np.isfinite(scores))
+
+
+# --------------------------------------------------------------------------
+# grouping-blindness: a loss that claims to use lists but does not
+# --------------------------------------------------------------------------
+
+def _within_group_pairwise(z, y, groups):
+    """A genuine BPR-style objective: pairs built WITHIN each group."""
+    total, grad, n = 0.0, np.zeros_like(z), 0
+    for g in np.unique(groups):
+        mask = groups == g
+        idx = np.where(mask)[0]
+        pos, neg = idx[y[mask] == 1], idx[y[mask] == 0]
+        if not len(pos) or not len(neg):
+            continue
+        diff = z[pos][:, None] - z[neg][None, :]
+        s = hlosses.sigmoid(diff)
+        total += float(-np.log(s + 1e-9).sum())
+        n += diff.size
+        np.add.at(grad, pos, -(1 - s).sum(1))
+        np.add.at(grad, neg, (1 - s).sum(0))
+    if n:
+        total /= n
+        grad /= n
+    return total, grad.astype(np.float32)
+
+
+def _grouping_blind_pairwise(z, y, groups):
+    """The bug this check exists for.
+
+    Identical maths, but pairs are built across the WHOLE batch instead of within
+    each user. It descends. It produces no NaN. Its gradient sign is correct. It
+    trains and it scores. It is simply not the objective it says it is -- and with
+    train lists averaging 43.5 rows, most of its pairs compare rows belonging to
+    different users.
+    """
+    return _within_group_pairwise(z, y, np.zeros_like(groups))
+
+
+def test_a_real_pairwise_loss_passes_the_grouping_check():
+    report = hlosses.check_loss(_within_group_pairwise, kind=hlosses.PAIRWISE)
+    assert report['kind'] == hlosses.PAIRWISE
+
+
+def test_a_grouping_blind_pairwise_loss_is_caught():
+    """The descent check cannot catch this: the loss is mathematically fine."""
+    hlosses.check_loss(_grouping_blind_pairwise, kind=hlosses.POINTWISE)
+
+    with pytest.raises(hlosses.LossError) as excinfo:
+        hlosses.check_loss(_grouping_blind_pairwise, kind=hlosses.PAIRWISE)
+    assert 'groups' in str(excinfo.value)
+
+
+def test_a_grouping_blind_listwise_loss_is_caught():
+    with pytest.raises(hlosses.LossError):
+        hlosses.check_loss(_grouping_blind_pairwise, kind=hlosses.LISTWISE)
+
+
+def test_relabelling_groups_does_not_fail_a_correct_loss():
+    """The check shuffles WHICH ROWS SHARE a group, not the group labels.
+
+    Relabelling 0 -> 1, 1 -> 2 leaves the partition identical, so a correct
+    group-aware loss rightly returns the same value. A check built on relabelling
+    would reject correct code for being correct.
+    """
+    z = np.random.default_rng(0).normal(0, 1, 64)
+    y = (np.arange(64) % 3 == 0).astype(float)
+    groups = np.repeat(np.arange(8), 8)
+    original, _ = _within_group_pairwise(z, y, groups)
+    relabelled, _ = _within_group_pairwise(z, y, (groups + 1) % 8)
+    assert original == pytest.approx(relabelled)
+    hlosses.check_loss(_within_group_pairwise, kind=hlosses.PAIRWISE)
+
+
+def test_the_registry_records_the_declared_kind():
+    assert hlosses.loss_kind('pointwise_logloss') == hlosses.POINTWISE
+    assert hlosses.loss_kind('a_loss_nobody_registered') == hlosses.POINTWISE
+
+
+def test_registering_with_an_unknown_kind_is_rejected():
+    with pytest.raises(hlosses.LossError):
+        hlosses.register_loss('never_used', kind='vibes')
+
+
+@pytest.mark.slow
+def test_a_grouping_blind_loss_never_reaches_training(splits):
+    """The check runs before the training loop, not after it.
+
+    A minute of training on a broken objective is cheap; a plausible number from
+    one is not.
+    """
+    hlosses.register_loss('blind_pairwise_probe', kind=hlosses.PAIRWISE)(
+        _grouping_blind_pairwise)
+    with pytest.raises(hlosses.LossError):
+        R.train_fm(splits, loss='blind_pairwise_probe', max_epochs=1)
+
+
+@pytest.mark.slow
+def test_diagnostics_report_the_measured_cost(short_run):
+    """"Expensive" has to be a comparison the agent can make, not a word."""
+    cost = short_run.diagnostics['cost']
+    assert cost['seconds'] > 0
+    assert cost['reference_fm_seconds'] == R.REFERENCE_FM_SECONDS
+    assert cost['relative_to_reference'] > 0
+    assert cost['timeout_minutes'] > 0
+    assert short_run.diagnostics['objective']['kind'] == hlosses.POINTWISE

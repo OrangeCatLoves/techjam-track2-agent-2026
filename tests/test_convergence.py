@@ -346,3 +346,53 @@ def test_strict_fires_whenever_block_fires(tmp_path):
 def test_unknown_comparison_is_rejected(tmp_path):
     with pytest.raises(ValueError):
         ConvergenceTracker(tmp_path / 'x.json', comparison='vibes')
+
+
+# --------------------------------------------------------------------------
+# the baseline-reproduction iteration must not cost a strike
+# --------------------------------------------------------------------------
+
+def test_baseline_reproduction_does_not_burn_a_strike(tmp_path):
+    """CLAUDE.md 6.4 requires the agent to reproduce the baseline itself.
+
+    That iteration necessarily scores ~0.6015, which is not an improvement on
+    anything. If the tracker treated it as a non-improving iteration, the agent
+    would start on strike one having done nothing wrong -- a third of the strike
+    budget lost to an off-by-one, discovered during the scored run.
+
+    It does not, because the first scored iteration has no prior best: its gain is
+    infinite by definition.
+    """
+    t = make(tmp_path)
+    status = feed(t, [0.6015])
+    assert status.strikes == 0
+    assert status.best_primary == pytest.approx(0.6015)
+    assert status.iteration == 1, 'it does still consume one of the 50'
+
+
+def test_seeding_the_initial_best_would_burn_a_strike(tmp_path):
+    """The trap, made explicit so nobody wires it up by accident.
+
+    Seeding `initial_best` with the published baseline and then recording the
+    agent's own reproduction of it produces a gain of exactly zero -- strike one,
+    before any experiment has been proposed. The agent's tracker is therefore
+    never seeded; it learns the baseline by reproducing it.
+    """
+    seeded = ConvergenceTracker.open(tmp_path / 'seeded.json', epsilon=EPS,
+                                     n_consecutive=3, initial_best=0.6015,
+                                     clock=FakeClock())
+    seeded.start_session()
+    assert seeded.record_iteration(0.6015).strikes == 1
+
+    unseeded = make(tmp_path)
+    assert unseeded.record_iteration(0.6015).strikes == 0
+
+
+def test_the_reproduction_iteration_counts_toward_the_fifty(tmp_path):
+    """It is a real experiment cycle -- code written, run, scored -- so it counts.
+
+    Only the strike question was ambiguous; the cap question is not.
+    """
+    t = make(tmp_path)
+    feed(t, [0.6015])
+    assert t.status().remaining_iterations == 49

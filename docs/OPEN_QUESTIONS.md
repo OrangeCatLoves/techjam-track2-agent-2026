@@ -340,3 +340,51 @@ site. Only integral values convert, so graded relevance would pass through — a
 
 The published baseline numbers are unaffected at the quoted precision; the FM still
 reproduces at 0.6015.
+
+### D13 — Canary escalation, and why the second trip stops the run
+
+One trip: quarantine, record the patch hash, roll back, continue. Two trips in one
+run: hard stop.
+
+The canary only catches leaks scoring above 0.80. A systematic leak path also
+produces sub-threshold results — 0.72, 0.75 — that look like genuine breakthroughs
+and would be **kept and submitted**. The risk of continuing after a second trip is
+therefore not wasted iterations but a quarantined result masking a kept one from the
+same cause. One trip can be a strange patch; two is a pattern, and a pattern points
+at something the harness hands out rather than at any single patch.
+
+This costs a manual intervention. That is the right trade: "we detected a leak and
+stopped" beats "we detected a leak twice and kept going". Full reasoning in
+`docs/M2_CONTRACT.md` section 6.
+
+### D14 — Baseline reproduction does not burn a strike, but does count toward the 50
+
+Confirmed by test, not by reading. The agent reproduces the baseline itself
+(CLAUDE.md 6.4), which scores ~0.6015 and improves on nothing. The tracker treats it
+correctly because the first scored iteration has no prior best, so its gain is
+infinite by definition.
+
+**The trap that would break this:** seeding `initial_best` with the published 0.6015.
+The reproduction then gains exactly zero and is strike one before any experiment has
+been proposed — a third of the strike budget lost to an off-by-one, discovered during
+the scored run. The agent's tracker is never seeded; it learns the baseline by
+reproducing it. Pinned by `test_seeding_the_initial_best_would_burn_a_strike`.
+
+It **does** consume one of the 50. It is a real experiment cycle: code written, run,
+scored. Only the strike question was ambiguous.
+
+### D15 — Per-iteration timeout reduced from 25 to 12 minutes
+
+A full reference FM run measures ~63 s on this machine, so 25 minutes was a ~24x
+backstop and one runaway experiment would cost 7% of the six-hour budget. Twelve
+minutes is ~11x: still generous for a genuinely heavier experiment such as a sequence
+or multi-task model, and a runaway now costs 3%.
+
+A timeout is not fatal — the recovery path retries once at a 30% subsample before the
+candidate is abandoned.
+
+Related: measured cost is now reported to the agent in `diagnostics['cost']`, with
+the reference figure alongside it, so "expensive" is a comparison it can make rather
+than a word it has to interpret. At ~63 s per experiment, twenty iterations is about
+21 minutes of training — the six-hour ceiling is dominated by LLM latency and
+overhead, not by compute.

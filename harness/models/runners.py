@@ -47,6 +47,11 @@ FIELDS: Sequence[str] = ('user_id', 'video_id', 'author_id', 'tab', 'dur_bucket'
 #: 1.14M train rows costs ~15 s per call for a number used only as a signal.
 GAP_SAMPLE_USERS = 4000
 
+#: Measured wall clock for a full reference FM run on this machine, in seconds.
+#: Reported alongside every experiment's own cost so that "expensive" is a
+#: comparison the agent can make rather than a word it has to interpret.
+REFERENCE_FM_SECONDS = 63.0
+
 
 @dataclass
 class TrainResult:
@@ -234,6 +239,12 @@ def train_fm(splits: Dict[str, list] | None = None,
     splits = splits if splits is not None else hdata.load()
     loss_fn = hlosses.get_loss(loss)
 
+    # Validate the objective on 64 synthetic rows before spending a minute on a
+    # real training run. Catches a sign inversion and a grouping-blind pairwise
+    # or listwise loss -- both of which train happily and produce a plausible
+    # number, which is exactly what makes them expensive to find later.
+    loss_report = hlosses.check_loss(loss_fn, kind=hlosses.loss_kind(loss))
+
     enc, dim = hdata.encode(splits)
     Xtr, ytr, _ = enc['train']
     Xva, yva, uva = enc['valid']
@@ -311,6 +322,19 @@ def train_fm(splits: Dict[str, list] | None = None,
                                                     / max(1, np.unique(groups_tr).size)),
                       'valid_users': int(final['users']),
                       'mean_valid_list_size': float(final['rows'] / max(1, final['users']))},
+            # What this experiment cost, with a reference point. "Expensive" has
+            # to mean something concrete to the agent rather than be inferred:
+            # a full reference FM is ~63 s, so the six-hour ceiling is dominated
+            # by LLM latency and overhead, not by training compute.
+            'cost': {'seconds': round(seconds, 1),
+                     'reference_fm_seconds': REFERENCE_FM_SECONDS,
+                     'relative_to_reference': round(seconds / REFERENCE_FM_SECONDS, 2),
+                     'timeout_minutes': float(hdata.load_config()
+                                              .get('agent', {})
+                                              .get('per_iteration_timeout_minutes', 12))},
+            'objective': {'kind': loss_report.get('kind'),
+                          'name': loss if isinstance(loss, str)
+                          else getattr(loss_fn, '__name__', 'callable')},
         }
         guards.assert_record_clean(diagnostics, where='train_fm diagnostics')
 

@@ -28,6 +28,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence
@@ -269,6 +270,34 @@ def quarantine_dir() -> Path:
     return hdata.repo_root() / cfg.get('runs_dir', 'runs') / 'quarantine'
 
 
+def quarantined_records(directory: Path | None = None) -> List[Dict[str, Any]]:
+    """Every canary trip recorded for this run, oldest first.
+
+    Read off the filesystem rather than held in memory, so the count survives a
+    crash-and-restart exactly like the convergence counters do.
+    """
+    directory = quarantine_dir() if directory is None else Path(directory)
+    if not directory.exists():
+        return []
+    out: List[Dict[str, Any]] = []
+    for path in sorted(directory.glob('canary-*.json')):
+        try:
+            out.append(json.loads(path.read_text(encoding='utf-8')))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return out
+
+
+def canary_trip_count(directory: Path | None = None) -> int:
+    """How many times the canary has fired in this run.
+
+    The escalation policy lives with the caller, but the number lives here.
+    See ``docs/M2_CONTRACT.md`` section 6: one trip is recorded and the run
+    continues; a second trip stops the run.
+    """
+    return len(quarantined_records(directory))
+
+
 def check_canary(val_primary: float,
                  *,
                  context: Dict[str, Any] | None = None,
@@ -292,7 +321,10 @@ def check_canary(val_primary: float,
     if quarantine:
         directory = quarantine_dir()
         directory.mkdir(parents=True, exist_ok=True)
-        path = directory / f'canary-{int(time.time() * 1000)}.json'
+        # A millisecond timestamp alone collides: two trips inside the same
+        # millisecond overwrote each other, which silently undercounted exactly
+        # the thing the escalation policy depends on.
+        path = directory / f'canary-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}.json'
         path.write_text(json.dumps(record, indent=2), encoding='utf-8')
     if raise_on_trip:
         raise LeakCanaryError(

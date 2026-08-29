@@ -228,3 +228,52 @@ def test_no_tracked_file_contains_an_api_key_pattern():
         if pattern.search(text):
             offenders.append(name)
     assert not offenders, f'API-key-shaped strings in tracked files: {offenders}'
+
+
+# --------------------------------------------------------------------------
+# canary memory across iterations
+# --------------------------------------------------------------------------
+
+def test_canary_trips_are_counted_not_just_raised(tmp_path, monkeypatch):
+    """A first trip is recoverable; a second is a pattern.
+
+    The count has to survive a crash-and-restart exactly like the convergence
+    counters do, so it is read off the filesystem rather than held in memory.
+    """
+    monkeypatch.setattr(guards, 'quarantine_dir', lambda: tmp_path)
+    assert guards.canary_trip_count() == 0
+    for score in (0.85, 0.91):
+        with pytest.raises(guards.LeakCanaryError):
+            guards.check_canary(score, context={'score': score})
+    assert guards.canary_trip_count() == 2
+
+
+def test_two_trips_in_the_same_millisecond_are_both_recorded(tmp_path, monkeypatch):
+    """A timestamp-only filename collided and silently undercounted.
+
+    That is precisely the number the escalation policy depends on, so the
+    collision is pinned rather than trusted to timing.
+    """
+    monkeypatch.setattr(guards, 'quarantine_dir', lambda: tmp_path)
+    for _ in range(5):
+        with pytest.raises(guards.LeakCanaryError):
+            guards.check_canary(0.9)
+    assert guards.canary_trip_count() == 5
+
+
+def test_quarantined_records_carry_the_context_a_human_needs(tmp_path, monkeypatch):
+    monkeypatch.setattr(guards, 'quarantine_dir', lambda: tmp_path)
+    with pytest.raises(guards.LeakCanaryError):
+        guards.check_canary(0.94, context={'iteration': 12, 'patch': 'abc123'})
+    record = guards.quarantined_records()[0]
+    assert record['val_primary'] == 0.94
+    assert record['threshold'] == guards.canary_threshold()
+    assert record['context'] == {'iteration': 12, 'patch': 'abc123'}
+    assert 'timestamp' in record
+
+
+def test_a_clean_run_records_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(guards, 'quarantine_dir', lambda: tmp_path)
+    for score in (0.4834, 0.5807, 0.6015, 0.79):
+        guards.check_canary(score)
+    assert guards.canary_trip_count() == 0

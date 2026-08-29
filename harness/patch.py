@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ast
 import fnmatch
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Sequence
@@ -227,6 +228,27 @@ def validate_patch(path: str | Path) -> PatchReport:
         return PatchReport(ok=False, path=_relative(target),
                            reasons=[f'no such patch file: {target}'])
     return validate_source(target.read_text(encoding='utf-8'), target)
+
+
+def content_hash(source_or_path: str | Path) -> str:
+    """Stable short hash of patch content, for the tried-set.
+
+    Hashes the *content*, not the filename, so the same experiment proposed twice
+    under different names is recognised as already tried. Whitespace-insensitive
+    at the line level, so a reformat is not a new experiment.
+
+    This is what a canary trip records: the exact patch that leaked must never be
+    re-proposed, even though the leak class may well be re-encountered.
+    """
+    candidate = Path(source_or_path) if isinstance(source_or_path, Path) else None
+    if candidate is None and isinstance(source_or_path, str) \
+            and source_or_path.endswith('.py'):
+        maybe = Path(source_or_path)
+        candidate = maybe if maybe.exists() else None
+    text = (candidate.read_text(encoding='utf-8') if candidate is not None
+            else str(source_or_path))
+    lines = [line.rstrip() for line in text.splitlines() if line.strip()]
+    return hashlib.sha256('\n'.join(lines).encode('utf-8')).hexdigest()[:16]
 
 
 def write_patch(source: str, path: str | Path) -> Path:

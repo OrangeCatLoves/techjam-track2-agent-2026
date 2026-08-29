@@ -165,3 +165,75 @@ def build(frame, stats): ...
 - **The counters and the stopping rule.** `harness/convergence.py`.
 - **Log screening.** `guards.assert_record_clean` — the M2 logger calls it on every
   record before writing, and every sink opens with `encoding='utf-8'` (D10).
+
+
+---
+
+## 6. Canary escalation policy
+
+`run_experiment` returns a canary trip as a failure rather than raising. That
+handles one trip. It does not handle the second, and the second is the one that
+matters: a canary trip usually means a **leak path** was found, so the agent's next
+proposal is likely adjacent to the one that just tripped. Without memory, the loop
+can burn several iterations rediscovering the same leak in slightly different forms.
+
+**In force:**
+
+| Trip | Action |
+|---|---|
+| 1st | quarantine, record the patch's content hash in the tried-set, roll back, continue |
+| 2nd | **hard stop.** Loud log entry. A human investigates before the run resumes |
+
+**Why a hard stop rather than a forced change of pipeline stage.** The canary only
+catches leaks scoring above 0.80. A systematic leak path does not produce only
+above-threshold results — it also produces *sub-threshold* ones, at 0.72 or 0.75,
+which look like genuine breakthroughs and get **kept and submitted**. So the real
+risk of continuing is not wasted iterations; it is a quarantined result masking a
+kept one from the same cause. One trip can be a strange patch. Two is a pattern, and
+a pattern means the leak is probably in something the harness hands out rather than
+in any single patch.
+
+This costs a manual intervention, and that is the right trade. "We detected a leak
+and stopped" is a far better answer to a judge than "we detected a leak twice and
+kept going."
+
+Both trips remain **hard failures**: never repaired, never retried. Repairing a
+canary trip is patching around a guard.
+
+Counting is done by `guards.canary_trip_count()`, which reads the quarantine
+directory rather than holding a number in memory, so the count survives a
+crash-and-restart exactly like the convergence counters do. The exact patch is put
+in the tried-set by content hash (`patch.content_hash`), so it is never re-proposed
+— though the leak *class* may well be re-encountered, which is what the second-trip
+rule is for.
+
+---
+
+## 7. Objective declarations
+
+`register_loss(name, kind=...)` takes `pointwise`, `pairwise` or `listwise`. The kind
+is a **declaration held to account**, not documentation: `check_loss` permutes the
+grouping and requires a declared pairwise or listwise objective to return a different
+loss.
+
+This closes a hole the descent check cannot reach. A pairwise loss that builds its
+pairs across the whole batch instead of within each user is mathematically valid,
+descends properly, produces no NaN, trains and scores — and is not the objective it
+claims to be. With train lists averaging 43.5 rows, most of its pairs would compare
+rows belonging to different users. It could plausibly still beat 0.6015, for entirely
+the wrong reason, and we would carry that into M3 believing we had found something.
+
+The shuffle is of array *positions*, not of group labels: relabelling `0 -> 1,
+1 -> 2` leaves the partition identical, so a correct loss would return the same value
+and be failed for being correct. Pinned by
+`test_relabelling_groups_does_not_fail_a_correct_loss`.
+
+`check_loss` runs inside `train_fm` before the training loop, so a broken objective
+costs 64 synthetic rows rather than a minute of training.
+
+**One deviation from the review.** The review asked for `error_kind='rejected'` on
+this failure. `rejected` is in `HARD_FAILURES` — never repaired — and a grouping bug
+is exactly the kind of thing one repair attempt fixes, given a precise message. It
+surfaces as `code` instead, so the agent gets its single repair with the reason
+spelled out. The detection is the valuable part; making it terminal throws away a
+cheap fix.

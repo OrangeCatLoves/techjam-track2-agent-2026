@@ -45,9 +45,22 @@ Return shape:
 ```
 
 `error_kind` is fixed vocabulary because it selects the recovery path (CLAUDE.md §6.3):
-`code` gets one repair attempt, `timeout` retries at 30% subsample, `memory` retries at
-float32 with half the features, `evaluator` is a hard failure that must never be patched
-around.
+
+| kind | recovery |
+|---|---|
+| `code` | one repair attempt, then abandon |
+| `timeout` | retry once at 30% subsample |
+| `memory` | retry once at float32 with half the features |
+| `evaluator` | **hard failure.** Never patch around the evaluator |
+| `rejected` | **hard failure.** Patch validation refused it; nothing ran |
+| `canary` | **hard failure.** Scored above the leak threshold; quarantined |
+
+`rejected` and `canary` were added during implementation. `canary` matters most: a
+tripped canary is returned as a *failed result*, not raised. `run_experiment` never
+raises for an experiment failure, and a leaking experiment is still an experiment —
+the loop records it, rolls back, marks it tried and continues. Halting would need a
+human to restart, which costs autonomy for an event the quarantine file already makes
+visible. It is a hard failure because repairing it would be patching around a guard.
 
 ---
 
@@ -104,12 +117,20 @@ The stub must be able to produce, on demand and deterministically by seed:
 | timeout | `ok=False`, `error_kind="timeout"` |
 | memory error | `ok=False`, `error_kind="memory"` |
 | evaluator rejection | `ok=False`, `error_kind="evaluator"` |
-| NaN score | `ok=True`, `val_primary=float('nan')` |
-| canary trip | `ok=True`, `val_primary=0.93` |
+| NaN score | `ok=True`, `val_primary=float('nan')`, `usable=False` |
+| canary trip | `ok=False`, `error_kind="canary"` — already converted by the screen |
 
-The last two are the nastiest and the most important. A NaN must not silently become
-the new best through a comparison that quietly returns `False`, and a canary trip must
-quarantine rather than celebrate.
+The last two are the nastiest and the most important.
+
+A **NaN** must not silently become the new best. `nan > best` is `False`, so an
+unguarded NaN reads as an ordinary non-improvement and hides a broken objective.
+`ExperimentResult.usable` is the guard: `ok` **and** not `None` **and** finite. Nothing
+compares a raw `val_primary` against the best without checking it.
+
+A **canary trip** arrives already converted to a failure, because `run_experiment`
+screens it before returning — a 0.93 score never reaches the loop at all. The stub
+routes through that same screen, so the two cannot drift apart by anyone forgetting to
+keep them in sync.
 
 The loop's acceptance test runs a scripted sequence over the stub covering every row
 above, and asserts the ledger, the strike count and the best checkpoint are correct

@@ -103,6 +103,11 @@ _BARE_TEST_RE = re.compile(r'^\s*test\b[^A-Za-z]*[-+]?\d*\.\d+', re.IGNORECASE)
 REDACTION = '[redacted: line carried a hidden-test metric -- see the raw human-only log]'
 
 
+#: Separators that are word characters to a regex but word breaks to a reader,
+#: so that `test_gauc=0.66` and `test-primary` are caught like `test gauc`.
+_SEPARATORS = re.compile(r'[_\-=:/.]+')
+
+
 def contains_test_metric(line: str) -> bool:
     """True if *line* mentions the test split anywhere near a metric.
 
@@ -112,7 +117,8 @@ def contains_test_metric(line: str) -> bool:
     """
     if _BARE_TEST_RE.match(line):
         return True
-    return bool(_TEST_RE.search(line)) and bool(_METRIC_RE.search(line))
+    spaced = _SEPARATORS.sub(' ', line)
+    return bool(_TEST_RE.search(spaced)) and bool(_METRIC_RE.search(spaced))
 
 
 def filter_stdout(text: str) -> tuple[str, int]:

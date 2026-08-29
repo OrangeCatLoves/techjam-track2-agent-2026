@@ -174,3 +174,13 @@ def test_captured_baseline_run_is_filtered(data_dir):
     assert 'HUMAN-ONLY' in raw
     with pytest.raises(guards.LeakageError):
         guards.assert_no_test_metrics(raw, where='raw log')
+
+
+@pytest.mark.parametrize('line', [
+    'test_gauc=0.6610',
+    'test-primary 0.5946',
+    'metrics/test/ndcg@5 0.5282',
+])
+def test_separators_do_not_hide_a_test_metric(line):
+    """`test_gauc` reads as two words to a human and one to a regex. It is caught."""
+    assert guards.contains_test_metric(line)

@@ -1,6 +1,8 @@
 # Open questions
 
-Version 2. Q1 and Q6 are now resolved from the starter kit source. Six remain.
+Version 3. Q1 and Q6 are resolved from the starter kit source. Seven remain open.
+Milestone 1 added nine build decisions at the end of this file (D1-D9); three of them
+are the working answers to Q3, Q4 and Q5.
 
 Post the remaining six to the organiser channel. Update this file and the matching
 config value in the same commit when an answer arrives.
@@ -66,9 +68,9 @@ It does not specify whether the comparison is `best(last 3) - best(before those 
 The convergence rule is **not** implemented anywhere in the starter kit. It is ours to
 implement.
 
-- **Status:** OPEN
-- **Default:** the stricter of the two readings
-- **Config:** `convergence.epsilon`, `convergence.n_consecutive`
+- **Status:** OPEN. Implemented, both readings, behind one switch. See **D1** below.
+- **Default:** the stricter of the two readings, `per_iteration`
+- **Config:** `convergence.epsilon`, `convergence.n_consecutive`, `convergence.comparison`
 - **Answer:**
 
 ---
@@ -78,7 +80,7 @@ implement.
 If a candidate errors out and is abandoned, does it consume one of the 50, and does it
 count as a non-improving iteration for the three-strike window?
 
-- **Status:** OPEN
+- **Status:** OPEN. Default implemented in `record_failure()`. See **D3** below.
 - **Default:** counts toward the 50 cap; does NOT count as a non-improving iteration
 - **If it flips:** repair policy changes materially. A failed iteration that burns a
   strike makes aggressive code generation much more expensive.
@@ -91,8 +93,10 @@ count as a non-improving iteration for the three-strike window?
 Per the webinar, restarts and operational recovery are not manual interventions.
 Confirming the accounting treatment in writing.
 
-- **Status:** OPEN (the webinar answer is second-hand and load-bearing)
+- **Status:** OPEN (the webinar answer is second-hand and load-bearing). Resume is
+  implemented and tested; the wall-clock treatment needed a further choice, **D2**.
 - **Default:** No effect. State resumes exactly from the ledger. Counters never reset.
+  Only *active* agent time is charged to the six hours.
 - **Config:** `convergence.reset_state_on_restart: false`
 - **Answer:**
 
@@ -145,3 +149,97 @@ instructions, objective, or search space. Restarting a crashed process, clearing
 lock, or freeing disk is operational recovery and is not an intervention.
 
 Both categories are counted and reported separately in the final resource table.
+
+---
+
+## Decisions taken while building Milestone 1
+
+Nine choices the code now embodies. Each is a conservative reading of something the
+organisers have not ruled on, or a measured fact that contradicted a written
+assumption. If an answer arrives, change the config value and the row here in the
+same commit.
+
+### D1 — Q3 is implemented as `per_iteration`, and here is why that is the stricter reading
+
+`harness/convergence.py` implements both readings behind
+`convergence.comparison` in `configs/base.yaml`:
+
+| Mode | Fires when |
+|---|---|
+| `per_iteration` (default) | every one of the last 3 scored iterations improved the running best by <= 0.002 |
+| `block` | `best(last 3) - best(before those 3) <= 0.002` |
+
+A sum of three gains cannot be <= epsilon unless each gain is <= epsilon, so
+**`block` firing implies `per_iteration` has already fired**. `per_iteration`
+therefore stops no later than `block`, which is the safe side of a rule we
+self-enforce. It is also the reading written in CLAUDE.md section 3.4. The ordering
+claim is pinned by `test_strict_fires_whenever_block_fires`.
+
+The two readings disagree on sequences like `0.6000, 0.6015, 0.6030, 0.6045`: three
+gains of 0.0015 each, individually under epsilon, together 0.0045 over it. Both
+behaviours are tested.
+
+### D2 — Wall clock across a restart charges active agent time only (Q5)
+
+`elapsed_seconds` accumulates only while the process is running, and is persisted
+and resumed. Time when the process is dead is not charged to the six hours.
+
+Charging downtime would be the stricter reading of "6 hours", but it makes the
+budget depend on when a human happens to notice a crash: a 02:00 failure found at
+09:00 would exhaust the budget with no work done. The rule is a compute budget, and
+CLAUDE.md section 10.2 reports "agent wall clock to convergence". Restarts are
+logged and reported separately, so the accounting is visible either way.
+
+### D3 — A failed iteration burns one of the 50 and no strike (Q4)
+
+Implemented exactly as the standing default. `record_failure()` advances the
+iteration counter, increments `failed_iterations`, and leaves the strike streak
+untouched: an abandoned candidate produced no validation score, so it is not a
+non-improving iteration. If the organisers rule that failures burn strikes, aggressive
+code generation gets much more expensive and the repair policy must change.
+
+### D4 — The harness refuses `--score --split test` outright
+
+`starter/submit.py` accepts `--score --split test` and would print a hidden-test
+metric. `harness/submit.py` and `harness/evaluate.py` raise `TestLabelAccessError`
+for the test split instead. Format checking (`--check`) still works on test, because
+it needs no label.
+
+### D5 — `harness.data.encode()` returns `y = None` for the test split
+
+The organisers' encoder reads a seventh field per row to build `y`. The wrapper
+appends a placeholder `0` internally and discards the resulting column, returning
+`None`. Placeholder zeros would silently pass for labels in downstream code; `None`
+fails loudly.
+
+### D6 — Gap: `configs/base.yaml` is not on `agent.protected_paths`
+
+The convergence parameters, the deny-list and the canary threshold all live in the
+config, but the config is not protected, so generated code could in principle edit
+the rule it is judged by. `configs/` and `scripts/` should join the protected-path
+list when the patch validator is built in Milestone 2. Recorded here rather than
+changed unilaterally, because the list is also part of the README's stated boundary.
+
+### D7 — The train split's first row is dated 20220409, not 20220408
+
+The rule and the config both say the train window is `20220408-20220421`. The
+standard log simply contains no rows dated 8 April. Not a discrepancy with the
+rule, and not a bug: the row count still matches exactly. Pinned as measured in
+`test_split_date_boundaries` so that a future loader change cannot move it quietly.
+
+### D8 — The verified environment does not match `requirements.txt`
+
+`requirements.txt` pins `numpy==1.26.4`. The baseline was reproduced, and Milestone
+1 verified, on **Python 3.14.0 with numpy 2.4.2**, giving validation primary 0.6015
+against the published 0.6016. The pin should either be relaxed to a floor or the
+environment brought to the pin before the scored run; it must not be left implicit.
+`scripts/verify_setup.py` prints the interpreter and numpy version on every run so
+the record is never guessed.
+
+### D9 — Contract tolerances differ by baseline, on purpose
+
+| Baseline | Published valid primary | Tolerance | Why |
+|---|---|---|---|
+| FM | 0.6016 | 0.001 | measured 0.6015; the number to beat |
+| item popularity | 0.5807 | 0.001 | pure statistics, no training, no seed variance; measured 0.5807 exactly |
+| random | 0.4834 | 0.002 | the published figure is a mean over seeds 0-4; we run one seed, measured 0.4827 |

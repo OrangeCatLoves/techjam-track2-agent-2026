@@ -77,11 +77,21 @@ Point `paths.raw_data_dir` in `configs/base.yaml` at the same directory.
 ### 4. Verify
 
 ```
-pytest tests/test_contract_baseline.py
+python scripts/verify_setup.py            # everything, about 10 minutes
+python scripts/verify_setup.py --fast     # skip the FM reproduction, about 20 seconds
 ```
 
-This reproduces the official Factorization Machine baseline and asserts the split row
-counts. If it fails, nothing downstream is trustworthy.
+This checks the environment, the data, the split row counts, the test-label strip, the
+column deny-list, the stdout filter against a live organiser run, the leak canary, the
+submission round trip, the convergence rule, the FM baseline reproduction, and the
+pytest suite, then prints a summary. If it fails, nothing downstream is trustworthy.
+
+The regression gate on its own:
+
+```
+pytest tests/test_contract_baseline.py    # row counts and the baseline ladder
+pytest tests/ -m "not slow"               # everything that runs in seconds
+```
 
 ---
 

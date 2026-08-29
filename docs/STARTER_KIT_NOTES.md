@@ -1,7 +1,7 @@
 # Starter kit notes
 
-Version 3. Setup verification complete. All three reference commands run and matched
-the published numbers.
+Version 4. Setup verification complete and Milestone 1 built. All four reference
+commands run and matched the published numbers, and the harness now wraps them.
 
 Machine: Windows, `C:\Users\Lenovo\track2-techjam\`
 Data: `C:\Users\Lenovo\track2-techjam\data\KuaiRand-Pure\data`
@@ -87,9 +87,13 @@ directly to stdout. `ablation_features.py` prints test scores too, on every line
 
 Required controls, see CLAUDE.md section 5:
 
-- [ ] `harness/data.py` strips index 6 from the test split
-- [ ] `harness/guards.py` filters starter stdout before the agent sees it
-- [ ] `test_no_test_labels.py` passes
+- [x] `harness/data.py` strips index 6 from the test split. Test rows are 6-tuples;
+      `row[6]` raises `IndexError`
+- [x] `harness/guards.py` filters starter stdout before the agent sees it, via
+      `run_starter_script`. Raw output goes to `runs/raw_starter_output/`, which is
+      gitignored because it contains the leak by construction
+- [x] `test_no_test_labels.py` passes, including a live `baseline.py` run whose test
+      line is redacted from what we see and still present in the human-only log
 
 **Filter target:** any stdout line matching `^\s*test\s` or containing `test ` followed
 by a metric name. Log raw output to a human-only file.
@@ -273,15 +277,21 @@ float; score not NaN or Inf; total row count equal to the split.
 `--score` works on `valid` and prints GAUC, nDCG@5, primary. Use it in the contract test
 as an independent check of our own scoring path.
 
-Corruption tests — TODO, to be built as `tests/test_submission.py`:
+Corruption tests — built as `tests/test_submission.py`, all passing:
 
 | Corruption | Rejected |
 |---|---|
-| wrong header | |
-| row-count mismatch | |
-| `row_id` gap | |
-| misalignment against the eval split | |
-| NaN score | |
+| wrong header | yes |
+| row-count mismatch (short) | yes |
+| row-count mismatch (long) | yes |
+| `row_id` gap | yes |
+| misalignment against the eval split | yes |
+| NaN score | yes |
+| Inf score | yes |
+| unparseable score | yes |
+
+`harness/submit.py` adds one refusal the organisers' script does not have:
+`--score --split test` raises instead of printing a hidden-test metric.
 
 ---
 
@@ -291,10 +301,14 @@ Corruption tests — TODO, to be built as `tests/test_submission.py`:
 
 | | valid primary |
 |---|---|
-| random | 0.4827 (measured) / 0.4834 (published) |
-| item popularity | 0.5807 (published, not yet run) |
+| random | 0.4827 (measured, seed 0) / 0.4834 (published, mean of seeds 0-4) |
+| item popularity | 0.5807 (measured) / 0.5807 (published) |
 | **FM official baseline** | **0.6015 (measured) / 0.6016 (published)** |
 | oracle ceiling | 0.8484 |
+
+Item popularity now measured: `valid GAUC 0.6387 | nDCG@5 0.5227 | primary 0.5807`,
+exact to four figures. It trains nothing and has no seed variance, which is why the
+contract test gives it the tight 0.001 tolerance and runs it on every fast pass.
 
 Target to beat: **0.6015**. Headroom to the ceiling: 0.247.
 
@@ -304,17 +318,25 @@ Target to beat: **0.6015**. Headroom to the ceiling: 0.247.
 
 | | |
 |---|---|
-| OS | Windows |
-| Shell | PowerShell |
-| Python version | TODO — `python -V` |
-| numpy version used for baseline | TODO — `pip show numpy` |
-| CPU / cores | TODO |
-| RAM | TODO |
+| OS | Windows 11 |
+| Shell | PowerShell (Bash also available) |
+| Python version | **3.14.0** |
+| numpy version used for baseline | **2.4.2** |
 | FM training wall clock | ~110 s (11 epochs at ~10 s) |
+| `data.load()` wall clock | ~5 s, so no on-disk cache is needed |
 | Ablation wall clock | ~15 min |
 
-Did the baseline number change after installing pandas / LightGBM? TODO — re-run
-`--model fm` after `pip install -r requirements.txt` and confirm 0.6015 still holds.
+**`requirements.txt` does not match this environment.** It pins `numpy==1.26.4`; the
+verified baseline and the whole of Milestone 1 ran on numpy 2.4.2 under Python 3.14
+and reproduced 0.6015. Either relax the pin to a floor or install to the pin before
+the scored run, but do not leave it implicit. Recorded as D8 in
+`docs/OPEN_QUESTIONS.md`. `scripts/verify_setup.py` prints the interpreter and numpy
+version on every run so the record is never guessed.
+
+pytest and psutil were installed this session; pandas, LightGBM, scipy and
+scikit-learn are still not installed, and nothing in the harness needs them yet.
+Re-run `scripts/verify_setup.py` after any dependency install and confirm 0.6015
+still holds.
 
 ---
 
@@ -326,10 +348,31 @@ Did the baseline number change after installing pandas / LightGBM? TODO — re-r
 | Split row counts verified | done |
 | FM baseline reproduced | done, 0.6015 |
 | Random sanity rung | done, 0.4827 |
+| Item popularity rung | done, 0.5807 |
 | Ablation reproduced | done, no gain from static features |
-| Item popularity rung | not run (optional) |
-| Full dependency install and re-verify | TODO |
-| Repo committed and pushed | TODO |
+| Milestone 1 harness built | done: data, guards, evaluate, submit, convergence |
+| Milestone 1 test suite | done: 69 tests, 5 marked slow |
+| `scripts/verify_setup.py` end to end | done |
+| Full dependency install and re-verify | TODO, see section 14 |
+| Repo pushed | TODO |
 | Open questions posted to organisers | TODO |
 
-Setup verification is complete. The build can begin.
+---
+
+## 16. What Milestone 1 delivered
+
+| File | Owns |
+|---|---|
+| `harness/data.py` | data-dir resolution, the load, **the test-label strip**, encoding |
+| `harness/guards.py` | deny-list, stdout filter, leak canary, log screening |
+| `harness/evaluate.py` | the one call site for the official metric; refuses test |
+| `harness/submit.py` | write / check / score; refuses to score test |
+| `harness/convergence.py` | the stopping rule, the counters, the tried-set, restart |
+| `tests/` | contract, no-test-labels, convergence, submission |
+| `scripts/verify_setup.py` | all of the above, end to end, with a printed summary |
+
+Run `python scripts/verify_setup.py --fast` (about 20 s) after any harness change,
+and the full `python scripts/verify_setup.py` (about 10 min, includes the FM
+reproduction and the slow tests) before trusting a result.
+
+Milestone 2 has not been started.

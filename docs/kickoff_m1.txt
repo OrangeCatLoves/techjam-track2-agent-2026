@@ -1,0 +1,98 @@
+We are building a submission for TikTok TechJam 2026, Track 2: an autonomous ML research agent for recommender systems. Read CLAUDE.md in the repo root before doing anything. It is the specification and it overrides your own judgement about ML best practice where they disagree.
+
+Then read, in this order:
+  docs/STARTER_KIT_NOTES.md   what we have already verified on this machine
+  docs/OPEN_QUESTIONS.md      unresolved rules and the conservative defaults in force
+  knowledge/methods.md        the method corpus, including measured dead ends
+  configs/base.yaml           all parameters
+  starter/README.md           the organisers' own guidance
+  starter/data.py, starter/evaluate.py, starter/submit.py, starter/baseline.py
+
+CURRENT STATE
+
+Setup verification is complete and passing:
+  - Data at C:\Users\Lenovo\track2-techjam\data\KuaiRand-Pure\data
+  - Split row counts confirmed: 1,141,112 / 124,909 / 170,588
+  - FM baseline reproduces at validation primary 0.6015 (published 0.6016)
+  - Random scoring gives validation primary 0.4827 (published 0.4834, 5-seed mean)
+  - Feature ablation reproduced: adding static feature fields gives NO gain
+
+No harness or agent code exists yet. The repo has scaffolding directories and empty __init__.py files only.
+
+WHAT WE ARE BUILDING
+
+Two things, both judged:
+  1. An agent: an LLM that inspects data, proposes an experiment, writes real Python for it, runs it, reads the score, and decides what to try next.
+  2. A model: whatever that agent produces. Scored once on a hidden test set.
+
+The number to beat is validation primary 0.6015.
+
+THREE HARD RULES
+
+1. NEVER modify anything in starter/. It is the organisers' code. Wrap it.
+
+2. NEVER let a test-set metric reach the agent's context, an LLM prompt, or any machine-readable log. starter/data.py returns test rows WITH their labels at tuple index 6, and starter/baseline.py prints test scores to stdout. Read CLAUDE.md section 5 carefully. This is the single most important correctness property in the project.
+
+3. NEVER reimplement starter/evaluate.py. It is the sole definition of the score.
+
+YOUR TASK THIS SESSION: MILESTONE 1 ONLY
+
+Build the foundation. Do not build the agent loop yet. Do not write any model beyond what is needed to verify the harness.
+
+Deliver these, in this order:
+
+1. harness/data.py
+   Wraps starter.data.load(). Reads the path from KUAIRAND_DATA_DIR or configs/base.yaml. Returns the same dict, EXCEPT the 'test' split has its label stripped: 6-tuples, not 7. Downstream code must be physically unable to read a test label.
+
+2. harness/guards.py
+   - Column deny-list per configs/base.yaml leakage.deny_columns_as_features
+   - A stdout filter that removes any line containing a test metric, for use when the agent shells out to starter/ scripts
+   - A leak canary: flag and quarantine any config scoring above 0.80 primary on validation
+
+3. harness/evaluate.py and harness/submit.py
+   Thin wrappers over the starter versions. No reimplementation.
+
+4. harness/convergence.py
+   Implements the official rule literally:
+     converged = three consecutive iterations each improving validation primary by <= 0.002, OR iteration count == 50, OR wall clock == 6 hours
+   Three properties that must hold:
+     - never stops voluntarily before convergence fires
+     - never continues after it fires
+     - a restart resumes iteration count, strike count and tried-set from disk; counters are never reset
+   Q3 in docs/OPEN_QUESTIONS.md is unresolved, so implement the stricter reading and make the comparison semantics a single switchable function.
+
+5. tests/test_contract_baseline.py
+   - Split row counts exactly 1,141,112 / 124,909 / 170,588
+   - baseline.py --model fm gives validation primary 0.6015 +/- 0.001
+   - baseline.py --model random gives validation primary 0.4834 +/- 0.002 (looser tolerance: the published figure is a 5-seed mean, we run one seed)
+   These are slow. Mark them with a pytest marker so they can be skipped during fast iteration, but they must run in CI.
+
+6. tests/test_no_test_labels.py
+   - harness.data.load()['test'] tuples have length 6
+   - Attempting to read index 6 on a test tuple raises IndexError
+   - The stdout filter removes the test line from a captured baseline.py run
+
+7. tests/test_convergence.py
+   Hand-built score sequences asserting correct strike counts and stop points, including the resume-after-restart case.
+
+8. tests/test_submission.py
+   submit.py --check passes on a valid file and rejects five corruptions: wrong header, row-count mismatch, row_id gap, misalignment, NaN score.
+
+ACCEPTANCE CRITERIA
+
+  pytest tests/ passes
+  A test that deliberately reads a test label fails loudly
+  scripts/verify_setup.py runs everything above end to end and prints a summary
+
+CONSTRAINTS
+
+  - Python only. numpy, pandas, pyarrow, scipy, scikit-learn, lightgbm, PyYAML, pytest, psutil. Nothing else without asking.
+  - Windows and PowerShell. The POSIX resource module is unavailable; use psutil for memory monitoring and subprocess timeout for time limits.
+  - Every module gets a docstring saying what it owns and what it must never do.
+  - Small commits, one per numbered item, with the contract test passing.
+
+WHEN YOU ARE DONE
+
+Report: what you built, what the tests assert, anything in CLAUDE.md that turned out to be wrong or unimplementable, and any decision you made that should be recorded in docs/OPEN_QUESTIONS.md.
+
+Do not start Milestone 2. Stop and wait.

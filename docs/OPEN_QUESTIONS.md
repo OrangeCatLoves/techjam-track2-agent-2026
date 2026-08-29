@@ -278,3 +278,34 @@ constantly. Anything that writes captured starter text to stdout or to a file mu
 set an explicit UTF-8 encoding, and log files must be opened with
 `encoding='utf-8'`. A crash here would be read as a failed experiment when the
 experiment actually succeeded.
+
+### D11 — The M2 acceptance gate was split (deliberate spec revision)
+
+`CLAUDE.md` §12.2 originally gated Milestone 2 on "a 10-iteration unattended run
+produces a valid submission **and beats 0.6016 on validation**." That bolts a research
+result onto an engineering one, and the two do not arrive together.
+
+**Why it was a spec bug rather than a standard worth holding.** §12.2 was written before
+the starter kit was read. At that point the plan named LightGBM as the workhorse and
+assumed a first-pass agent would find easy gains. Reading the kit reversed both: the
+organisers' published ablations show static features (0.5940 vs 0.5950) and embedding
+capacity (k = 8/16/32, flat) are measured dead ends, and §9.3 now says a GBDT is probably
+a trap on 27K x 7.5K IDs. That removed most of the cheap moves. The agent ships at M2
+with only a pointwise loss available, so its realistic move set is hyperparameters, or
+writing a pairwise objective unprompted. Gating a milestone on an outcome this document's
+own strategy section calls unlikely means a working loop gets recorded as a failure
+because the science did not land on schedule.
+
+**In force:**
+
+| Milestone | Gate |
+|---|---|
+| M2 | ten iterations unattended, valid submission passing `--check`, survives kill-and-restart, human-readable log. **Score is not a gate.** |
+| M3 | three iterations targeting different pipeline stages with reasoning that changed after evidence, **and beats validation primary 0.6015** |
+
+Nothing about the competition rules changes. The convergence rule, the 50-iteration cap,
+the 6-hour ceiling and the validation-best checkpoint are untouched; this is our own
+internal milestone accounting.
+
+Raised in external review, accepted, and recorded here as a decision rather than a
+slipped target.

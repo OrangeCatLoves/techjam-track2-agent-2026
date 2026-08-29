@@ -536,11 +536,13 @@ Regression rule: after any harness change, re-run the contract test and the curr
 
 **M1 Foundation.** Contract test green. Test-label stripping working and tested. `ablation_features.py` run once. Repo pushed, four interfaces frozen.
 
-**M2 Loop works.** `analyse` tool. Loss-function interface. Ledger, logger, sandbox. Agent loop end to end with real code generation, one repair attempt, rollback.
-*Accept:* a 10-iteration unattended run produces a valid submission and beats 0.6016 on validation. Restart mid-run and confirm state resumes.
+**M2 Loop works.** Model runner (FM reimplemented against label-stripped splits). `run_experiment` boundary. `analyse` tool. Loss-function interface. Ledger, logger, sandbox, patch validator. Agent loop end to end with real code generation, one repair attempt, rollback, checkpoint save/restore.
+*Accept:* **an engineering result only.** Ten iterations complete unattended, a valid submission is produced and passes `--check`, the run survives kill-and-restart, and `log.md` is readable by a human. **Score is not a gate at M2.**
+
+> **Revised.** This gate previously read "and beats 0.6016 on validation", which bolted a research result onto an engineering one. See D11 in `docs/OPEN_QUESTIONS.md`. The agent ships at M2 with only a pointwise loss, and §9.1 records that features and capacity are measured dead ends, so its realistic move set is hyperparameters or writing a pairwise objective unprompted. Gating the milestone on an outcome this file's own strategy calls unlikely was a spec bug. A working loop must not be declared a failure because the science did not land on schedule.
 
 **M3 Agent gets good.** Agent reproduces the baseline itself. Method corpus in use. Pairwise and listwise losses available for it to discover. Noise floor measured. Token accounting complete.
-*Accept:* a run whose log shows at least three iterations targeting different pipeline stages, with reasoning that changed after evidence.
+*Accept:* **the research result now lives here.** A run whose log shows at least three iterations targeting different pipeline stages, with reasoning that changed after evidence, **and which beats validation primary 0.6015**.
 
 **M4 Scored run.** Freeze code. One clean, uncached run, started once, recorded. Submission written and `--check` validated. Results and resource tables complete.
 *Accept:* zero manual interventions by the stated definition. **Start with at least 8 hours of window remaining.**

@@ -77,13 +77,50 @@ def test_the_agent_can_enumerate_its_own_instrument():
         assert description and isinstance(description, str)
 
 
+#: Advisory phrases, not single words. A substring check on "best" would fire on
+#: "best epoch" and "best-scoring checkpoint", both of which are neutral -- and a
+#: test that cries wolf gets weakened rather than heeded.
+EDITORIALISING = (
+    r'\byou (should|will|can expect|need to)\b',
+    r'\bwe (recommend|suggest|found|expect)\b',
+    r'\bthe best (option|choice|approach|grouping|loss)\b',
+    r'\b(proves|demonstrates that|confirms that)\b',
+    r'\b(is|are) better than\b',
+    r'\btry this (first|instead)\b',
+    r'\b(look for|focus on|start with)\b',
+)
+
+
 def test_capability_descriptions_say_what_is_measured_not_what_to_conclude():
-    """A description that states a finding turns the tool into a dashboard."""
-    forbidden = ('should', 'best', 'better than', 'you will find', 'proves')
+    """A description that states a finding turns the tool into a dashboard.
+
+    Matched on advisory *phrases* rather than bare words, deliberately. "best"
+    alone appears in "best epoch" and "best-scoring checkpoint", which are
+    descriptive; a blunt substring check would fire on legitimate text later and
+    the next person would weaken the test rather than reword the description.
+    """
+    import re
     for kind, description in A.CAPABILITIES.items():
-        lowered = description.lower()
-        for word in forbidden:
-            assert word not in lowered, f'{kind} description editorialises: {word!r}'
+        for pattern in EDITORIALISING:
+            assert not re.search(pattern, description, re.IGNORECASE), (
+                f'{kind} description tells the agent what to conclude '
+                f'({pattern!r}): {description!r}')
+
+
+def test_the_editorialising_check_actually_catches_editorialising():
+    """A guard nobody has seen fire is a guard nobody should trust."""
+    import re
+
+    def offends(text):
+        return any(re.search(p, text, re.IGNORECASE) for p in EDITORIALISING)
+
+    assert offends('you should group by user_id+date')
+    assert offends('we recommend the listwise objective')
+    assert offends('the best grouping for this benchmark')
+    assert offends('start with the loss function')
+    # Neutral phrasings that a blunt substring check would have failed:
+    assert not offends('the best epoch is reported alongside the last')
+    assert not offends('returns the best-scoring checkpoint so far')
 
 
 def test_every_result_carries_the_question_that_produced_it(splits):
@@ -204,3 +241,33 @@ def test_mismatched_score_length_is_rejected(splits):
                         ('model_disagreement', {'other_scores': [0.0] * 10})):
         with pytest.raises(A.AnalysisError):
             A.analyse(kind, 'valid', splits=splits, scores=[0.0] * 10, **extra)
+
+
+def test_user_composition_bounds_what_a_model_can_reach(splits):
+    """Every user falls in exactly one group, and only one group feeds GAUC."""
+    rows = {r['group']: r for r in
+            A.analyse('user_composition', 'valid', splits=splits).rows}
+    assert set(rows) == {'all_negative', 'all_positive', 'discriminative'}
+    assert sum(r['share'] for r in rows.values()) == pytest.approx(1.0)
+    assert sum(r['users'] for r in rows.values()) == len(
+        set(hdata.user_ids(splits, 'valid')))
+    assert rows['discriminative']['counts_toward_gauc'] is True
+    assert rows['all_negative']['counts_toward_gauc'] is False
+    assert rows['all_positive']['counts_toward_gauc'] is False
+
+
+def test_composition_differs_sharply_between_train_and_validation(splits):
+    """Why this is a question rather than a constant in the corpus.
+
+    Train lists average 43.5 rows, so almost every training user has both a
+    positive and a negative and is discriminative. Validation lists average 5.6,
+    so a far larger share of users are all-one-way and drop out of GAUC entirely.
+    A single published figure cannot describe both.
+    """
+    train = {r['group']: r['share'] for r in
+             A.analyse('user_composition', 'train', splits=splits).rows}
+    valid = {r['group']: r['share'] for r in
+             A.analyse('user_composition', 'valid', splits=splits).rows}
+    assert train['discriminative'] > 0.85
+    assert valid['discriminative'] < 0.70
+    assert valid['all_negative'] > 4 * train['all_negative']

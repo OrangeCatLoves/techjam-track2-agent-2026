@@ -396,3 +396,57 @@ def test_the_reproduction_iteration_counts_toward_the_fifty(tmp_path):
     t = make(tmp_path)
     feed(t, [0.6015])
     assert t.status().remaining_iterations == 49
+
+
+# --------------------------------------------------------------------------
+# a non-finite score must never reach the comparison
+# --------------------------------------------------------------------------
+
+def test_a_nan_score_is_refused_outright(tmp_path):
+    """Not merely ignored -- refused, because ignoring it is actively harmful.
+
+    `nan <= epsilon` is False, so a recorded NaN counts as a non-strike and
+    RESETS the trailing streak. A broken objective emitting NaN would clear the
+    strike counter and keep the run going indefinitely.
+    """
+    t = make(tmp_path)
+    feed(t, [0.6015, 0.6020, 0.6025])
+    assert t.strikes == 2
+
+    with pytest.raises(ValueError, match='non-finite'):
+        t.record_iteration(float('nan'))
+
+    assert t.strikes == 2, 'the streak must survive the rejected record'
+    assert t.iteration == 3, 'a refused record must not advance the counter'
+
+
+def test_an_infinite_score_is_refused_too(tmp_path):
+    t = make(tmp_path)
+    for value in (float('inf'), float('-inf')):
+        with pytest.raises(ValueError, match='non-finite'):
+            t.record_iteration(value)
+    assert t.iteration == 0
+
+
+def test_a_broken_objective_is_recorded_as_a_failure_instead(tmp_path):
+    """The route the loop must take when ExperimentResult.usable is False."""
+    t = make(tmp_path)
+    feed(t, [0.6015, 0.6020, 0.6025])
+    status = t.record_failure(error='objective produced a NaN validation primary')
+    assert status.strikes == 2, 'a failure leaves the streak untouched (Q4)'
+    assert status.failed_iterations == 1
+    assert status.iteration == 4
+
+
+def test_the_comparison_lives_in_exactly_one_place(tmp_path):
+    """The value of centralising the NaN check is that no caller repeats it.
+
+    If a second comparison site appears, this test does not catch it -- but the
+    refusal above means any site that bypasses the tracker cannot corrupt the
+    counters, because the tracker is the only thing that holds them.
+    """
+    t = make(tmp_path)
+    feed(t, [0.6100])
+    assert t.best_primary == pytest.approx(0.6100)
+    feed(t, [0.5000])
+    assert t.best_primary == pytest.approx(0.6100), 'a worse score never wins'

@@ -262,6 +262,52 @@ def _cold_key_rate(splits, split, **_) -> AnalysisResult:
                            f'training split._'])
 
 
+def _user_composition(splits, split, **_) -> AnalysisResult:
+    """How users divide into all-negative, all-positive and discriminative.
+
+    This bounds what any model can do. A user with no positives scores nDCG 0
+    whatever is predicted; a user with no negatives scores 1. **GAUC is computed
+    over the discriminative users alone**, so the size of that group decides how
+    much of the metric is even reachable, and training weight spent on the other
+    two groups moves nDCG only.
+
+    The composition differs sharply between splits, which is why this is a
+    question rather than a constant.
+    """
+    labels = hdata.labels(splits, split)
+    users = hdata.user_ids(splits, split)
+    by_user: Dict[Any, List[int]] = defaultdict(list)
+    for user, label in zip(users, labels):
+        by_user[user].append(label)
+
+    all_negative = all_positive = discriminative = 0
+    for values in by_user.values():
+        positives = sum(values)
+        if positives == 0:
+            all_negative += 1
+        elif positives == len(values):
+            all_positive += 1
+        else:
+            discriminative += 1
+
+    total = max(1, len(by_user))
+    out = [
+        {'group': 'all_negative', 'users': all_negative,
+         'share': all_negative / total, 'nDCG@5': 'always 0.0',
+         'counts_toward_gauc': False},
+        {'group': 'all_positive', 'users': all_positive,
+         'share': all_positive / total, 'nDCG@5': 'always 1.0',
+         'counts_toward_gauc': False},
+        {'group': 'discriminative', 'users': discriminative,
+         'share': discriminative / total, 'nDCG@5': 'model-dependent',
+         'counts_toward_gauc': True},
+    ]
+    return AnalysisResult(
+        'user_composition', split, {}, out,
+        [f'_{total:,} users · overall long_view rate '
+         f'{sum(labels) / max(1, len(labels)):.4f}._'])
+
+
 def _segment_metrics(splits, split, *, scores: Sequence[float],
                      column: str = 'user_impressions', bins: int = 5,
                      min_users: int = 30, **_) -> AnalysisResult:
@@ -379,6 +425,7 @@ QUERIES: Dict[str, Callable[..., AnalysisResult]] = {
     'rate_by_bucket': _rate_by_bucket,
     'distribution': _distribution,
     'list_size_profile': _list_size_profile,
+    'user_composition': _user_composition,
     'segment_metrics': _segment_metrics,
     'temporal_drift': _temporal_drift,
     'model_disagreement': _model_disagreement,
@@ -393,6 +440,8 @@ CAPABILITIES: Dict[str, str] = {
                       f'(column: one of {COLUMNS + DERIVED}; bins; min_rows)',
     'distribution': 'how a column is distributed (column; bins)',
     'list_size_profile': 'impressions per user, by user_id and by user_id+date',
+    'user_composition': 'how users divide into all-negative, all-positive and '
+                        'discriminative, and which of those GAUC is computed over',
     'segment_metrics': 'GAUC/nDCG@5/primary broken down by a segment '
                        '(needs scores; column; bins; min_users)',
     'temporal_drift': 'rows, users, rate and median duration per date',

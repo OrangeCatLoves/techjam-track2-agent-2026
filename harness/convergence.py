@@ -405,6 +405,23 @@ class ConvergenceTracker:
             raise ValueError(f'unknown iteration status {status!r}')
         if status == STATUS_OK and primary is None:
             raise ValueError('a successful iteration must report a validation primary')
+        if status == STATUS_OK and not math.isfinite(float(primary)):
+            # This is the one place a score is compared against the best, so it is
+            # the one place that must refuse a score it cannot compare.
+            #
+            # A NaN slipped through here is not merely ignored, it is actively
+            # harmful: `nan <= epsilon` is False, so the iteration is recorded as
+            # a non-strike and the trailing streak RESETS. A broken objective
+            # emitting NaN would clear the strike counter and keep the run going
+            # indefinitely -- the exact opposite of the rule.
+            #
+            # The caller checks `ExperimentResult.usable` before getting here, so
+            # reaching this line is a loop bug, and loop bugs are loud.
+            raise ValueError(
+                f'refusing to record a non-finite validation primary ({primary!r}). '
+                f'A NaN would reset the strike streak rather than count against it. '
+                f'Check ExperimentResult.usable before recording, and record a '
+                f'non-finite score as a failed iteration instead.')
 
         self.iteration += 1
         record: Dict[str, Any] = {

@@ -236,3 +236,46 @@ is exactly the kind of thing one repair attempt fixes, given a precise message. 
 surfaces as `code` instead, so the agent gets its single repair with the reason
 spelled out. The detection is the valuable part; making it terminal throws away a
 cheap fix.
+
+
+---
+
+## 8. M2b requirements, fixed before any of it is written
+
+All three are cheap now and expensive to retrofit.
+
+**Token accounting from the first call, not the first successful one.** Failed
+requests, retries and timeouts consume tokens. A counter that only increments on
+success reports a Feasibility number wrong by an unknown amount, and Feasibility is
+15% of the grade, scored only if we beat the baseline. `llm.py` records usage from
+the response object on every call, including calls that raise, and attributes
+retries to the iteration that caused them.
+
+**A hard token ceiling per run, enforced in `llm.py`.** 300,000 for development runs,
+with a warning at 200,000. A loop that gets stuck re-proposing at 4am should stop,
+not drain the account. The ceiling is config; the enforcement is not optional; and
+hitting it is a logged event rather than a crash.
+
+**Log which model handled which call.** Recorded per call even when both variables
+point at the same model. Doing it now means the fast/strong split is a config change
+later rather than an instrumentation project.
+
+Current setting: `LLM_MODEL_FAST=claude-haiku-4-5-20251001` for routine diagnosis and
+one-shot repair, `LLM_MODEL_STRONG=claude-opus-5` for proposals and plateau breaks.
+
+---
+
+## 9. Where the score-versus-best comparison lives
+
+Exactly one place: `ConvergenceTracker.record_iteration`, which **refuses** a
+non-finite validation primary rather than ignoring it.
+
+Ignoring is not neutral. `nan <= epsilon` is `False`, so a recorded NaN counts as a
+non-strike and *resets the trailing streak*: a broken objective emitting NaN would
+clear the strike counter and keep the run going indefinitely. Measured before the
+fix: three iterations at strike 2, one NaN, strike count back to 0.
+
+`Ledger.would_improve` and `ExperimentResult.usable` guard the same thing at their
+own layers, so the loop has no route to the comparison that skips a check. The
+tracker's refusal is the backstop: reaching it means the loop failed to check
+`usable` first, which is a loop bug, and loop bugs are loud.

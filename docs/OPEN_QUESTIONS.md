@@ -456,3 +456,59 @@ Nothing about the list-construction experiment is settled by this. Mean length i
 property and the distributions still differ; `(user_id, date)` produces 7.5x as many
 lists, each far shorter in the tail. It remains the agent's experiment to run — which
 is why the finding lives here and in CLAUDE.md, and not anywhere the agent reads.
+
+
+### D17 - A NaN validation primary reset the strike counter
+
+Found by asking where the score-versus-best comparison actually lives.
+
+`ConvergenceTracker.record_iteration` compared `primary > self.best_primary`, which
+correctly refuses a NaN as a new best. But the iteration was still recorded as
+*scored*, and `strike = gain <= epsilon` evaluates `nan <= 0.002` as `False`, so the
+NaN counted as an improvement and **reset the trailing streak**.
+
+Measured before the fix:
+
+```
+before NaN: strikes = 2
+after  NaN: strikes = 0   <- streak cleared by a broken objective
+```
+
+A model emitting NaN would clear the strike counter every time and prevent the run
+from ever converging by the no-improvement rule. It would burn to the 50-iteration or
+6-hour cap producing nothing.
+
+**Fix.** `record_iteration` refuses a non-finite primary outright, with a message
+naming the failure mode. The loop must check `ExperimentResult.usable` first and
+record a non-finite score as a *failed* iteration, which burns one of the 50 and
+leaves the streak untouched (Q4).
+
+The general point: `usable`, `would_improve` and `record_iteration` each guard this
+at their own layer, but only the tracker holds the counters, so only the tracker's
+refusal is load-bearing. The other two are convenience.
+
+### D18 - Validation composition differs materially from the published test figures
+
+`knowledge/methods.md` quoted the organisers' test-set composition as though it
+described the data the agent works with. Measured:
+
+| Split | all-negative | all-positive | discriminative | long_view rate |
+|---|---|---|---|---|
+| train | 5.1% | 2.3% | **92.7%** | 0.3366 |
+| valid | 30.3% | 11.9% | **57.8%** | 0.3133 |
+| test (published) | 27.1% | 9.2% | 63.7% | - |
+
+Validation has roughly six percentage points *fewer* discriminative users than test,
+and train has thirty-five more. GAUC is computed over discriminative users alone, so
+the three splits do not measure the metric over comparable populations. That is a
+concrete validation-to-test transfer risk, and a reason train-set intuitions about
+GAUC do not carry.
+
+The cause is list length: train lists average 43.5 rows, so almost every training
+user has both a positive and a negative; validation lists average 5.6, so far more
+users fall entirely one way.
+
+**Fix.** A `user_composition` query added to `analyse`, and the corpus now attributes
+the published figures to the test split explicitly and points at the tool for the
+splits that can be measured. Same handling as D16: numbers where humans read them,
+measurement for the agent.

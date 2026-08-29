@@ -149,7 +149,16 @@ Tune ensemble weights once. Weights tuned repeatedly against validation will ove
 
 GAUC weights each user by their positive count and counts only users with `0 < positives < impressions`, so high-engagement discriminative users dominate it. nDCG@5 weights all users equally and includes zero-positive users as 0.
 
-On the test set, 27.1% of users are all-negative, 9.2% all-positive, and only 63.7% are discriminative. **GAUC is computed over that 63.7% alone.** Training weight spent on the other 36.3% moves nDCG only.
+The published composition figures — 27.1% all-negative, 9.2% all-positive, 63.7% discriminative — are for the **hidden test set**, which is the one split you can neither measure nor select on. They are quoted here because the organisers published them, not because they describe the data you work with.
+
+**Measure the splits you actually have.** They differ, and the difference is not small:
+
+```
+analyse(kind="user_composition", split="train")
+analyse(kind="user_composition", split="valid")
+```
+
+Whatever the numbers turn out to be: GAUC is computed over discriminative users alone, so the size of that group bounds how much of the metric any model can reach, and training weight spent on all-negative and all-positive users moves nDCG only.
 
 Weighting training samples by the user's positive count is a cheap experiment that should raise GAUC. Watch whether nDCG falls by more than it gains, and instrument both metrics separately every iteration.
 

@@ -138,6 +138,13 @@ agent:
   # subsample before the candidate is abandoned.
   per_iteration_timeout_minutes: 12
   memory_limit_gb: 8
+  # Enforced in agent/llm.py, not advised. A loop stuck re-proposing at 4am must
+  # stop rather than drain the account. Charged on EVERY call including failures
+  # and retries, because those consume tokens too and Feasibility is scored on the
+  # total. Raise deliberately for the scored run if the dev budget proves tight.
+  token_budget:
+    limit: 300000
+    warn_at: 200000
   protected_paths:
     - starter/                     # organiser code, read-only
     - configs/                     # holds THIS list, the convergence rule, the

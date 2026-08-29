@@ -29,6 +29,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Sequence
 
+import numpy as np
+
 from harness import data as hdata
 from harness import guards
 from harness import patch as hpatch
@@ -321,6 +323,18 @@ class StubRunner:
         result = make_stub_result(item, seed=seed, best_so_far=self.best_so_far)
         if result.usable and result.val_primary > self.best_so_far:
             self.best_so_far = result.val_primary
+        # Honour checkpoint_path like the real runner does. A stub whose success
+        # path cannot be exercised end to end is not doing its job: the loop
+        # promotes a checkpoint on a keep, and a promotion of a path that was
+        # never written is a failure the stub would otherwise hide until the
+        # first real run.
+        target = kwargs.get('checkpoint_path')
+        if result.usable and target is not None:
+            path = Path(target)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            np.savez(path, V=np.zeros((2, 2), dtype=np.float32),
+                     W=np.zeros(2, dtype=np.float32), b=np.float32(0.0))
+            result.checkpoint = str(path)
         return result
 
     @property

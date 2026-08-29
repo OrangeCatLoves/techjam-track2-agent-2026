@@ -169,3 +169,62 @@ def test_canary_quarantines_with_context(tmp_path, monkeypatch):
     record = json.loads(files[0].read_text(encoding='utf-8'))
     assert record['val_primary'] == 0.92
     assert record['context']['iteration'] == 7
+
+
+# --------------------------------------------------------------------------
+# secrets must not reach a tracked file
+# --------------------------------------------------------------------------
+
+SECRET_ENV_KEYS = ('ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_AUTH_TOKEN')
+
+
+def test_env_example_carries_no_filled_secret():
+    """`.env.example` is tracked; `.env` is not. Only the latter holds real values.
+
+    This happened for real: a key was pasted into `.env.example` -- the file that
+    looks like the one to edit -- and a broad `git add -A` committed it. Caught,
+    the commit was amended and the object purged before anything was pushed, and
+    the key was rotated. A comment would not have prevented it; this does.
+    """
+    from harness import data as hdata
+
+    path = hdata.repo_root() / '.env.example'
+    if not path.exists():
+        pytest.skip('.env.example is absent')
+    for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#') or '=' not in stripped:
+            continue
+        key, _, value = stripped.partition('=')
+        if key.strip() in SECRET_ENV_KEYS and value.strip():
+            raise AssertionError(
+                f'.env.example line {number} assigns a value to {key.strip()}. '
+                f'Real credentials belong in .env, which is gitignored. '
+                f'Clear it, and rotate the credential -- it may already be in a '
+                f'commit.')
+
+
+def test_no_tracked_file_contains_an_api_key_pattern():
+    """A crude but load-bearing scan of everything git tracks."""
+    import re
+    import subprocess
+
+    from harness import data as hdata
+
+    root = hdata.repo_root()
+    listing = subprocess.run(['git', 'ls-files'], cwd=str(root),
+                             capture_output=True, text=True, encoding='utf-8')
+    if listing.returncode != 0:
+        pytest.skip('not a git checkout')
+
+    pattern = re.compile(r'sk-ant-api\d\d-[A-Za-z0-9_\-]{20,}|sk-[A-Za-z0-9]{32,}')
+    offenders = []
+    for name in listing.stdout.split():
+        file_path = root / name
+        try:
+            text = file_path.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError):
+            continue
+        if pattern.search(text):
+            offenders.append(name)
+    assert not offenders, f'API-key-shaped strings in tracked files: {offenders}'

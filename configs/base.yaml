@@ -51,6 +51,13 @@ convergence:                        # RULE -- implement literally, no cleverness
   n_consecutive: 3
   max_iterations: 50
   max_wall_clock_hours: 6
+  # Q3 is unresolved. Two defensible readings of "three consecutive iterations
+  # improving by <= epsilon", both implemented in harness/convergence.py:
+  #   per_iteration  every one of the last N gained <= epsilon  (STRICTER, default)
+  #   block          best(last N) - best(before those N) <= epsilon
+  # per_iteration fires no later than block, which is the safe side of a rule we
+  # self-enforce. Flip this one word if the organisers rule otherwise.
+  comparison: per_iteration
   # Never stop voluntarily before convergence fires.
   # Never continue after it fires.
   # On the final strike, take the highest-expected-gain untried structural change.

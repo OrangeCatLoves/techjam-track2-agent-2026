@@ -512,3 +512,62 @@ users fall entirely one way.
 the published figures to the test split explicitly and points at the tool for the
 splits that can be measured. Same handling as D16: numbers where humans read them,
 measurement for the agent.
+
+
+### D19 - What "Milestone 3 succeeded" means, decided before the run
+
+Raised in review, and worth settling before the first real LLM call rather than
+after a disappointing one.
+
+**The risk.** The expected route to beating 0.6015 is the agent writing a pairwise
+or listwise objective itself, correctly, including within-group pair construction,
+and passing the grouping-permutation check. That is not trivial code. If the agent
+cannot write one, the research gate does not move by that route.
+
+**The tempting fix is forbidden.** Shipping the loss for it would hollow out
+Innovation, which is 20%, and would make the run log a record of our idea rather
+than the agent's. `harness/losses.py` ships pointwise only and a test enforces it.
+
+**In force:**
+
+M3 succeeds if the agent produces a genuine improvement over validation primary
+0.6015 **through its own reasoning**, by any lever. The pairwise objective is the
+expected route, not the required one. A +0.004 found by list-construction search is
+a real result and is reported as one.
+
+M3 does **not** succeed if:
+
+- the improvement came from the deterministic fallback rather than the agent. That
+  path is labelled `NOT the agent` in every patch it writes precisely so this
+  distinction survives into the log
+- the winning checkpoint is quarantined, or flagged for review and not cleared
+- the gain is under 0.002 on a single seed. The organisers' 5-seed std is 0.0008 and
+  adjacent epochs of one run swing ~0.0009, so a smaller gain has not been
+  distinguished from noise. `selection.confirm_seeds: 3` exists for this and is
+  currently unused
+
+**If the agent writes three broken losses and then finds a gain elsewhere**, that is
+a success with an honest caveat, and the run log makes the shape of it visible
+either way. A smaller true result beats an inflated one, and three failed attempts
+at a novel objective followed by a real gain elsewhere is a more interesting
+research narrative than a lucky hyperparameter.
+
+**If the agent cannot beat 0.6015 at all**, M3 fails and we say so. We still submit
+the validation-best checkpoint, and Feasibility (15%) goes unscored because it is
+conditional on beating the baseline. Autonomy and Innovation are 40% and are not
+conditional on it. Reporting a null result accurately is worth more than a
+contrived one, and the deterministic control makes the comparison legible.
+
+### D20 - The deterministic fallback will be measured, and both numbers published
+
+The fallback is a 30-configuration scripted hyperparameter search. It exists as
+outage insurance, but it is also the **control**: if it scores as well as the agent,
+the agent was not adding anything.
+
+Before the scored run, it is run to convergence and its score recorded. The README
+and the report carry both numbers.
+
+"Our agent beat our own scripted search by X" is far stronger evidence for the
+Innovation and Impact criteria than "our agent scored Y", and it costs one
+deterministic run of about half an hour to be able to say it. If the fallback wins,
+that is the finding, and we report it.

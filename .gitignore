@@ -32,3 +32,4 @@ Thumbs.db
 # Human-only. Never commit, never read into a prompt or a machine-readable log.
 runs/raw_starter_output/
 runs/quarantine/
+runs/review/

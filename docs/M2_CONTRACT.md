@@ -169,43 +169,42 @@ def build(frame, stats): ...
 
 ---
 
-## 6. Canary escalation policy
+## 6. Leak response: two tiers, and the run never halts
 
-`run_experiment` returns a canary trip as a failure rather than raising. That
-handles one trip. It does not handle the second, and the second is the one that
-matters: a canary trip usually means a **leak path** was found, so the agent's next
-proposal is likely adjacent to the one that just tripped. Without memory, the loop
-can burn several iterations rediscovering the same leak in slightly different forms.
+**Revised.** An earlier version stopped the run on a second canary trip. That was
+wrong; see D13 for the argument that overturned it. The policy in force:
 
-**In force:**
-
-| Trip | Action |
+| Validation primary | Response |
 |---|---|
-| 1st | quarantine, record the patch's content hash in the tried-set, roll back, continue |
-| 2nd | **hard stop.** Loud log entry. A human investigates before the run resumes |
+| > 0.80 (canary) | **Quarantined.** Never kept, never repaired, never submitted. Returned as `error_kind="canary"` |
+| > 0.68 (review) | **KEPT and flagged.** Can still win. A human inspects it before submission |
+| otherwise | kept, clean |
 
-**Why a hard stop rather than a forced change of pipeline stage.** The canary only
-catches leaks scoring above 0.80. A systematic leak path does not produce only
-above-threshold results — it also produces *sub-threshold* ones, at 0.72 or 0.75,
-which look like genuine breakthroughs and get **kept and submitted**. So the real
-risk of continuing is not wasted iterations; it is a quarantined result masking a
-kept one from the same cause. One trip can be a strange patch. Two is a pattern, and
-a pattern means the leak is probably in something the harness hands out rather than
-in any single patch.
+**The run never halts on either.** On a canary trip the loop quarantines, records
+the patch's content hash in the tried-set, runs a retrospective audit of everything
+already kept, and continues. A second trip additionally forces the next proposal to
+a different `target_stage`.
 
-This costs a manual intervention, and that is the right trade. "We detected a leak
-and stopped" is a far better answer to a judge than "we detected a leak twice and
-kept going."
+**Why the lower tier exists, and why it is unconditional.** The result that costs us
+the competition is not the one that trips the canary — that one is caught by
+definition. It is the quieter sibling from the same leak path: a 0.72 that trips
+nothing, looks like a genuine breakthrough, and is kept and submitted. A leak that
+*never* crosses 0.80 is invisible to the canary entirely, and has no trip to trigger
+an investigation. So the review flag fires on its own, not in response to a canary.
 
-Both trips remain **hard failures**: never repaired, never retried. Repairing a
-canary trip is patching around a guard.
+0.68 is `+0.0785` over the baseline — **31.8% of all remaining headroom consumed in a
+single iteration**, on a benchmark whose own authors measured features and capacity
+as dead ends. Implausible enough to be worth a look, loose enough not to fire on real
+progress.
 
-Counting is done by `guards.canary_trip_count()`, which reads the quarantine
-directory rather than holding a number in memory, so the count survives a
-crash-and-restart exactly like the convergence counters do. The exact patch is put
-in the tried-set by content hash (`patch.content_hash`), so it is never re-proposed
-— though the leak *class* may well be re-encountered, which is what the second-trip
-rule is for.
+**Why the audit rather than a stop.** A canary trip says a leak path exists *now*. It
+says nothing about when the path opened. Halting is forward-looking protection
+against a backward-looking risk: the contaminated checkpoint may already be banked.
+`guards.audit_kept_results` is the part that actually reaches it.
+
+Counting survives a restart because both tiers are read off the filesystem
+(`runs/quarantine/`, `runs/review/`) rather than held in memory, exactly like the
+convergence counters.
 
 ---
 

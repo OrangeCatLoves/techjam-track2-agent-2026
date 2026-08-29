@@ -110,8 +110,20 @@ leakage:
   use_video_statistic_file: false
   use_supplementary_files: false   # Q7
   use_random_exposure_log: false   # Q8. If allowed, VALIDATION only, never training.
-  # Validation oracle ceiling is 0.8484, so anything near it is a leak.
+  # Two tiers, because a leak that never crosses the canary is invisible to it.
+  #
+  # canary (0.80): quarantined, never kept, never repaired. The validation oracle
+  #   ceiling is 0.8484, so a score here is a bug wearing a breakthrough's clothes.
+  # review (0.68): KEPT, but flagged for a human to inspect before submission.
+  #   0.68 is +0.0785 over the baseline, which is 31.8% of all remaining headroom
+  #   consumed in a single iteration -- implausible on a benchmark whose own
+  #   authors measured features and capacity as dead ends.
+  #
+  # The review tier exists because the dangerous case is not the result that trips
+  # the canary. It is the sub-threshold sibling from the same leak path, which
+  # looks like a breakthrough and gets kept and submitted. See D13.
   canary_primary_threshold: 0.80
+  review_primary_threshold: 0.68
   enforce_causal_encoding: true
 
 agent:

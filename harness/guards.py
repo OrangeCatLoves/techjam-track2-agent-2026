@@ -270,6 +270,90 @@ def quarantine_dir() -> Path:
     return hdata.repo_root() / cfg.get('runs_dir', 'runs') / 'quarantine'
 
 
+def review_threshold() -> float:
+    """Validation primary above which a **kept** result is flagged for a human.
+
+    The lower of the two tiers. See ``flag_for_review``.
+    """
+    return float(hdata.load_config().get('leakage', {})
+                 .get('review_primary_threshold', 0.68))
+
+
+def review_dir() -> Path:
+    """Where flagged-but-kept results are recorded for pre-submission review."""
+    cfg = hdata.load_config().get('paths', {})
+    return hdata.repo_root() / cfg.get('runs_dir', 'runs') / 'review'
+
+
+def flag_for_review(val_primary: float, *, context: Dict[str, Any] | None = None,
+                    threshold: float | None = None,
+                    record: bool = True) -> bool:
+    """Flag a kept result as implausibly good. Returns True if flagged.
+
+    **This never raises and never rejects.** The result is kept and can still win;
+    it is simply marked so a human looks at it before anything is submitted.
+
+    Why this tier exists at all. The canary catches leaks scoring above 0.80. The
+    result that actually costs us the competition is its quieter sibling: a
+    sub-threshold 0.72 from the same leak path, which does not trip anything, looks
+    like a genuine breakthrough, and is kept and submitted. A leak that *never*
+    crosses 0.80 is invisible to the canary entirely.
+
+    Unconditional, not triggered by a canary trip. The invisible case has no trip
+    to trigger on.
+    """
+    limit = review_threshold() if threshold is None else threshold
+    if not (val_primary > limit):
+        return False
+    if record:
+        directory = review_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        payload = {'val_primary': float(val_primary), 'threshold': limit,
+                   'timestamp': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                   'context': context or {},
+                   'verdict': 'KEPT but flagged: a gain this large is implausible '
+                              'on this benchmark. A human must inspect this '
+                              'checkpoint before it is submitted.'}
+        path = directory / f'review-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}.json'
+        path.write_text(json.dumps(payload, indent=2), encoding='utf-8')
+    return True
+
+
+def review_flags(directory: Path | None = None) -> List[Dict[str, Any]]:
+    """Every result flagged for review in this run, oldest first."""
+    directory = review_dir() if directory is None else Path(directory)
+    if not directory.exists():
+        return []
+    out: List[Dict[str, Any]] = []
+    for path in sorted(directory.glob('review-*.json')):
+        try:
+            out.append(json.loads(path.read_text(encoding='utf-8')))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return out
+
+
+def review_flag_count(directory: Path | None = None) -> int:
+    """How many kept results need a human's eye before submission."""
+    return len(review_flags(directory))
+
+
+def audit_kept_results(results: Iterable[Dict[str, Any]],
+                       threshold: float | None = None) -> List[Dict[str, Any]]:
+    """Retrospective sweep over results already kept, newest risk first.
+
+    Run after a canary trip. A trip says a leak path exists *now*; it says nothing
+    about when the path opened. The same leak may have produced a quieter,
+    already-banked result several iterations ago, and stopping the run at that
+    point would be forward-looking protection against a backward-looking risk.
+    This is the part that actually reaches it.
+    """
+    limit = review_threshold() if threshold is None else threshold
+    flagged = [r for r in results
+               if r.get('val_primary') is not None and r['val_primary'] > limit]
+    return sorted(flagged, key=lambda r: -r['val_primary'])
+
+
 def quarantined_records(directory: Path | None = None) -> List[Dict[str, Any]]:
     """Every canary trip recorded for this run, oldest first.
 

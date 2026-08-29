@@ -65,6 +65,9 @@ class ExperimentResult:
     seed: int = 0
     stdout: str = ''
     peak_memory_mb: float = 0.0
+    #: Kept, but implausibly good. A human inspects it before anything is
+    #: submitted. Not a rejection: this result can still be the winner.
+    flagged_for_review: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -114,6 +117,12 @@ def _screen(result: ExperimentResult, *, quarantine: bool = True
                 diagnostics=result.diagnostics,
                 error=(f'{exc} The result is quarantined and must not be kept '
                        f'or submitted.'))
+        # The lower tier. This result is KEPT and may still win; it is only
+        # marked, because the leak that costs us the competition is the one that
+        # never crosses the canary at all.
+        result.flagged_for_review = guards.flag_for_review(
+            float(result.val_primary), record=quarantine,
+            context={'source': 'run_experiment', 'seed': result.seed})
     return result
 
 

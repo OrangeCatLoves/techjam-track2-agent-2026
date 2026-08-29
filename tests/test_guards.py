@@ -24,6 +24,7 @@ import json
 
 import pytest
 
+from harness import experiment as X
 from harness import guards
 from harness import submit as hsubmit
 
@@ -277,3 +278,97 @@ def test_a_clean_run_records_nothing(tmp_path, monkeypatch):
     for score in (0.4834, 0.5807, 0.6015, 0.79):
         guards.check_canary(score)
     assert guards.canary_trip_count() == 0
+
+
+# --------------------------------------------------------------------------
+# the review tier: the leak that never trips the canary (D13)
+# --------------------------------------------------------------------------
+
+def test_the_two_tiers_are_ordered():
+    assert guards.review_threshold() < guards.canary_threshold()
+
+
+def test_a_legitimate_gain_is_neither_flagged_nor_quarantined(tmp_path, monkeypatch):
+    monkeypatch.setattr(guards, 'review_dir', lambda: tmp_path)
+    for score in (0.6015, 0.6120, 0.6300, 0.6500):
+        assert not guards.flag_for_review(score)
+        assert not guards.check_canary(score, quarantine=False, raise_on_trip=False)
+    assert guards.review_flag_count(tmp_path) == 0
+
+
+def test_a_sub_canary_leak_is_flagged_but_kept(tmp_path, monkeypatch):
+    """The case that costs the competition, and that the canary cannot see.
+
+    A 0.72 from a leak path trips nothing, looks like a breakthrough, and would be
+    kept and submitted. It is kept -- the flag is not a rejection -- but a human
+    is told to look before anything is submitted.
+    """
+    monkeypatch.setattr(guards, 'review_dir', lambda: tmp_path)
+    assert guards.flag_for_review(0.72, context={'iteration': 5})
+    assert not guards.check_canary(0.72, quarantine=False, raise_on_trip=False), (
+        'the canary must NOT fire here; that is the whole point of the lower tier')
+    assert guards.review_flag_count(tmp_path) == 1
+
+
+def test_flagging_never_raises(tmp_path, monkeypatch):
+    """A flag is not a rejection. The result stays eligible to win."""
+    monkeypatch.setattr(guards, 'review_dir', lambda: tmp_path)
+    assert guards.flag_for_review(0.79) is True
+    assert guards.flag_for_review(0.60) is False
+
+
+def test_the_review_tier_is_unconditional(tmp_path, monkeypatch):
+    """It fires with no canary trip anywhere in the run.
+
+    Both the original policy and its first revision missed this: a leak that never
+    crosses 0.80 produces no event to respond to, so a response triggered BY a
+    canary trip would never run.
+    """
+    monkeypatch.setattr(guards, 'review_dir', lambda: tmp_path)
+    monkeypatch.setattr(guards, 'quarantine_dir', lambda: tmp_path / 'q')
+    for score in (0.69, 0.71, 0.74):
+        guards.flag_for_review(score)
+    assert guards.canary_trip_count(tmp_path / 'q') == 0
+    assert guards.review_flag_count(tmp_path) == 3
+
+
+def test_retrospective_audit_finds_an_already_banked_result():
+    """The argument that overturned the hard stop.
+
+    A canary trip says a leak path exists now; it says nothing about when the path
+    opened. Stopping cannot reach a checkpoint that is already in the ledger. This
+    can.
+    """
+    kept = [{'iteration': 2, 'val_primary': 0.6050},
+            {'iteration': 5, 'val_primary': 0.7210},
+            {'iteration': 8, 'val_primary': 0.6880},
+            {'iteration': 9, 'val_primary': 0.6400}]
+    flagged = guards.audit_kept_results(kept)
+    assert [r['iteration'] for r in flagged] == [5, 8], 'worst first'
+    assert all(r['val_primary'] > guards.review_threshold() for r in flagged)
+
+
+def test_a_quarantined_result_never_reaches_the_review_tier(tmp_path, monkeypatch):
+    """Ordering: the canary returns early, so 0.85 is quarantined, not merely
+    flagged. A flagged result is one we KEEP."""
+    monkeypatch.setattr(guards, 'review_dir', lambda: tmp_path / 'r')
+    monkeypatch.setattr(guards, 'quarantine_dir', lambda: tmp_path / 'q')
+    result = X.make_stub_result('canary_trip')
+    assert result.error_kind == X.ERROR_CANARY
+    assert result.flagged_for_review is False
+    assert guards.review_flag_count(tmp_path / 'r') == 0
+
+
+def test_review_flags_carry_what_a_human_needs(tmp_path, monkeypatch):
+    monkeypatch.setattr(guards, 'review_dir', lambda: tmp_path)
+    guards.flag_for_review(0.75, context={'iteration': 12, 'patch': 'abc123'})
+    record = guards.review_flags(tmp_path)[0]
+    assert record['val_primary'] == 0.75
+    assert record['threshold'] == guards.review_threshold()
+    assert record['context'] == {'iteration': 12, 'patch': 'abc123'}
+    assert 'human' in record['verdict'].lower()
+
+
+def test_an_ordinary_result_is_not_flagged():
+    assert X.make_stub_result('improvement').flagged_for_review is False
+    assert X.make_stub_result('no_improvement').flagged_for_review is False

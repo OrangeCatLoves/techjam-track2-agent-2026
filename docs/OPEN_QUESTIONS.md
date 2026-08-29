@@ -341,21 +341,47 @@ site. Only integral values convert, so graded relevance would pass through — a
 The published baseline numbers are unaffected at the quoted precision; the FM still
 reproduces at 0.6015.
 
-### D13 — Canary escalation, and why the second trip stops the run
+### D13 — Leak response: two tiers, and the run never halts (REVISED)
 
-One trip: quarantine, record the patch hash, roll back, continue. Two trips in one
-run: hard stop.
+**Superseded my own earlier decision.** The first version of D13 stopped the run on a
+second canary trip. It was wrong, and the reasoning I gave for it actually argued
+against it.
 
-The canary only catches leaks scoring above 0.80. A systematic leak path also
-produces sub-threshold results — 0.72, 0.75 — that look like genuine breakthroughs
-and would be **kept and submitted**. The risk of continuing after a second trip is
-therefore not wasted iterations but a quarantined result masking a kept one from the
-same cause. One trip can be a strange patch; two is a pattern, and a pattern points
-at something the harness hands out rather than at any single patch.
+**The argument I made:** the canary only catches leaks above 0.80, so a systematic
+leak path also produces sub-threshold results at 0.72-0.75 that look like
+breakthroughs and get kept. True, and the important part.
 
-This costs a manual intervention. That is the right trade: "we detected a leak and
-stopped" beats "we detected a leak twice and kept going". Full reasoning in
-`docs/M2_CONTRACT.md` section 6.
+**What I missed.** If that is true, the same leak may have produced a kept result
+*before the first trip*. Stopping at trip two is forward-looking protection against a
+backward-looking risk — the contaminated checkpoint is already in the ledger. So the
+stop bought nothing against the risk I named, while costing a manual intervention,
+which is a scored criterion at 20%.
+
+**And one nobody raised, which settles it.** Halting mid-run during an unattended
+six-hour scored run means the run never converges and **no submission is produced at
+all**. That trades a speculative harm for a certain one.
+
+**In force:**
+
+| Tier | Threshold | Response |
+|---|---|---|
+| canary | > 0.80 | quarantined; never kept, never repaired, never submitted |
+| review | > 0.68 | **kept and flagged**; a human inspects before submission |
+
+On a canary trip: quarantine, record the patch hash in the tried-set, **audit every
+already-kept result** against the review threshold, continue. On a second trip,
+additionally force the next proposal to a different `target_stage`.
+
+**The review tier is unconditional**, not triggered by a canary trip. Both the
+original design and the reviewer's counter-proposal missed the actual worst case: a
+leak that never crosses 0.80 trips nothing, so there is no event to respond to. An
+always-on flag at 0.68 is the only thing that sees it.
+
+0.68 is +0.0785 over the baseline, or 31.8% of all remaining headroom in one
+iteration, on a benchmark whose authors measured features and capacity as dead ends.
+
+**Cost of being wrong now:** a false flag costs one human glance at a log line. The
+previous design's cost of being wrong was a halted scored run with nothing submitted.
 
 ### D14 — Baseline reproduction does not burn a strike, but does count toward the 50
 

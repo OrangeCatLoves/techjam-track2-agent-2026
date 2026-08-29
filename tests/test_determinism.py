@@ -139,3 +139,44 @@ def test_same_seed_gives_the_same_baseline_twice(data_dir):
 
     assert run(0) == run(0)
     assert run(0) != run(1), 'different seeds must give different scores'
+
+
+# --------------------------------------------------------------------------
+# label dtype must not change the metric
+# --------------------------------------------------------------------------
+
+def test_label_dtype_does_not_change_the_score(splits):
+    """float32 labels used to silently drop the metric to float32 precision.
+
+    ``starter.evaluate.ndcg_at_k`` accumulates ``(2 ** t) - 1`` in the label's own
+    dtype, so the organisers' float32 ``y`` from ``encode()`` and a caller's
+    Python ints disagreed in the seventh significant digit for identical
+    predictions. ~7e-7, far below the 0.002 epsilon, so no decision was at risk --
+    but two spellings of one number is a phantom regression waiting to happen.
+    """
+    scores = np.random.default_rng(0).random(len(splits['valid']))
+    users = hdata.user_ids(splits, 'valid')
+    as_int = hdata.labels(splits, 'valid')
+    as_float32 = np.asarray(as_int, dtype=np.float32)
+    as_float64 = np.asarray(as_int, dtype=np.float64)
+
+    reference = hevaluate.evaluate(users, as_int, scores)
+    for variant, name in ((as_float32, 'float32'), (as_float64, 'float64')):
+        assert hevaluate.evaluate(users, variant, scores) == reference, (
+            f'{name} labels gave a different score to int labels')
+
+
+def test_trainer_and_submission_paths_agree_exactly(splits):
+    """The two scoring routes must return the same float, not merely a close one.
+
+    The trainer scores in-memory with the encoder's labels; the submission path
+    reads labels off the split rows. Both go through harness.evaluate, so both
+    must land on the same value.
+    """
+    enc, _ = hdata.encode({'train': splits['train'][:5000],
+                           'valid': splits['valid'],
+                           'test': splits['test'][:10]})
+    scores = np.random.default_rng(1).random(len(splits['valid']))
+    trainer_route = hevaluate.evaluate(enc['valid'][2], enc['valid'][1], scores)
+    submission_route = hevaluate.evaluate_split(splits, 'valid', scores)
+    assert trainer_route['primary'] == submission_route['primary']

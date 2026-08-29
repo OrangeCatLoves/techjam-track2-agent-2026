@@ -212,13 +212,14 @@ appends a placeholder `0` internally and discards the resulting column, returnin
 `None`. Placeholder zeros would silently pass for labels in downstream code; `None`
 fails loudly.
 
-### D6 — Gap: `configs/base.yaml` is not on `agent.protected_paths`
+### D6 — Gap: `configs/base.yaml` was not on `agent.protected_paths` (RESOLVED)
 
 The convergence parameters, the deny-list and the canary threshold all live in the
 config, but the config is not protected, so generated code could in principle edit
-the rule it is judged by. `configs/` and `scripts/` should join the protected-path
-list when the patch validator is built in Milestone 2. Recorded here rather than
-changed unilaterally, because the list is also part of the README's stated boundary.
+the rule it is judged by. **Resolved.** `configs/`, `scripts/`, `harness/losses.py` and
+`harness/models/runners.py` are now on the list. Raised in external review, which
+also asked for a test asserting a patch touching a protected path is rejected — that
+test belongs with the patch validator in M2a and is listed in `docs/M2_CONTRACT.md`.
 
 ### D7 — The train split's first row is dated 20220409, not 20220408
 
@@ -309,3 +310,33 @@ internal milestone accounting.
 
 Raised in external review, accepted, and recorded here as a decision rather than a
 slipped target.
+
+### D12 — Label dtype silently changed the metric's precision
+
+`starter/evaluate.py`'s `ndcg_at_k` computes `(2 ** t) - 1` on whatever type it is
+handed and accumulates in that type. So the same predictions scored with float32
+labels and with Python int labels disagree in the seventh significant digit:
+
+```
+same scores, float32 labels -> 0.5869309
+same scores, int   labels   -> 0.5869302535796688
+```
+
+Both spellings were live in this repo. The organisers' `run_fm` passes `y` straight
+from `encode()`, which is float32, and our `evaluate_split` reads Python ints off the
+split rows. Found when a checkpoint round-trip test compared the two routes and
+failed at 6e-7 despite bit-identical predictions.
+
+**No decision was ever at risk** — 7e-7 is four orders of magnitude below the 0.002
+convergence epsilon. But two spellings of one number is a phantom regression waiting
+for an afternoon, and generated code will call `evaluate` from everywhere.
+
+**Fix:** `harness.evaluate.evaluate` normalises integral labels to `int` before
+delegating. The metric itself is untouched; this is input hygiene at the single call
+site. Only integral values convert, so graded relevance would pass through — and
+`long_view` is binary by definition, so it is the identity on real data. Pinned by
+`test_label_dtype_does_not_change_the_score` and
+`test_trainer_and_submission_paths_agree_exactly`.
+
+The published baseline numbers are unaffected at the quoted precision; the FM still
+reproduces at 0.6015.

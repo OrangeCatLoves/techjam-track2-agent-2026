@@ -123,11 +123,19 @@ agent:
   memory_limit_gb: 8
   protected_paths:
     - starter/                     # organiser code, read-only
+    - configs/                     # holds THIS list, the convergence rule, the
+                                   # deny-list and the canary threshold. Generated
+                                   # code that can edit it can edit its way out of
+                                   # every guard. See D6 in docs/OPEN_QUESTIONS.md
+    - scripts/
     - harness/data.py
     - harness/guards.py
     - harness/evaluate.py
     - harness/submit.py
     - harness/convergence.py
+    - harness/losses.py            # the loss INTERFACE and the reference objective.
+                                   # Generated losses register from models/gen/
+    - harness/models/runners.py    # reproduces the baseline; must not drift
     - harness/ledger.py
     - harness/logger.py
     - harness/sandbox.py

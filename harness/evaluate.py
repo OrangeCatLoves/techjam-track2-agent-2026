@@ -19,10 +19,37 @@ from __future__ import annotations
 
 from typing import Any, Dict, Sequence
 
+import numpy as np
+
 from harness import data as hdata
 
 #: Keys returned by ``starter.evaluate.evaluate`` at k=5.
 GAUC, NDCG5, PRIMARY = 'GAUC', 'nDCG@5', 'primary'
+
+
+def _normalise_labels(labels: Sequence[Any]) -> Sequence[Any]:
+    """Coerce integral labels to Python ints before scoring. Input hygiene only.
+
+    ``starter.evaluate.ndcg_at_k`` computes ``(2 ** t) - 1`` on whatever type it is
+    handed and accumulates in that type, so a float32 label array silently drops
+    the whole metric to float32 precision. The organisers' own ``run_fm`` passes
+    ``y`` straight from ``encode()``, which is float32, while a caller reading
+    labels from the split rows passes Python ints — and the two disagree in the
+    seventh significant digit for identical predictions.
+
+    The gap is ~7e-7, far below the 0.002 convergence epsilon, so no decision was
+    ever at risk. But two spellings of the same number invite an afternoon of
+    chasing a phantom regression, and generated code will call this from
+    everywhere. Normalising here makes every call site agree exactly.
+
+    Only integral values are converted, so graded relevance would pass through
+    untouched. The label is binary by definition (``long_view``), so this is the
+    identity on real data.
+    """
+    array = np.asarray(labels)
+    if array.dtype.kind == 'f' and array.size and np.all(array == np.rint(array)):
+        return array.astype(np.int64).tolist()
+    return labels
 
 
 def evaluate(user_ids: Sequence[Any], labels: Sequence[Any],
@@ -30,8 +57,12 @@ def evaluate(user_ids: Sequence[Any], labels: Sequence[Any],
     """The official metric, unmodified.
 
     Returns ``{'GAUC': .., 'nDCG@5': .., 'primary': .., 'users': .., 'rows': ..}``.
+
+    The only thing added is label normalisation; see ``_normalise_labels``. The
+    metric itself is the organisers' and is not touched.
     """
-    return hdata.starter_evaluate_module().evaluate(user_ids, labels, scores, k)
+    return hdata.starter_evaluate_module().evaluate(
+        user_ids, _normalise_labels(labels), scores, k)
 
 
 def evaluate_split(splits: Dict[str, list], split: str,

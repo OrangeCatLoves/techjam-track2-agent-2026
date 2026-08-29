@@ -30,8 +30,8 @@ pytest==9.1.1
 # where the POSIX `resource` module is unavailable)
 psutil==7.2.2
 
-# LLM provider. Not yet installed; Milestone 2. Keep only the one you use, and
+# LLM provider. Installed. Keep only the one you use, and
 # record token counts from the response object on every call -- Feasibility
 # scoring depends on it and cannot be reconstructed after the fact.
-anthropic>=0.34.2
+anthropic==1.2.0
 # openai>=1.40.0

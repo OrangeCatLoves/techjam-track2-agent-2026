@@ -1,25 +1,37 @@
-# Reproduce the official baseline with numpy alone before installing anything below.
-# The starter kit is numpy-only by design; adding libraries is allowed by the rules
-# but must not change the baseline number.
+# Versions below are the ones Milestone 1 was VERIFIED on, not aspirational pins.
+# Interpreter: Python 3.14.0 on Windows 11.
+#
+# The previous pins (numpy 1.26.4, pandas 2.2.2, ...) predate this interpreter and
+# were never installed here; several have no Python 3.14 wheel. The stack below was
+# installed and the official FM baseline re-verified at validation primary 0.6015
+# afterwards, so these numbers are measured rather than guessed.
+#
+# Re-run `python scripts/verify_setup.py` after changing anything in this file.
+# It prints the interpreter and numpy version on every run, so the record of what
+# produced a result is never reconstructed from memory.
 
-numpy==1.26.4
+# The starter kit is numpy-only by design. Reproduce the official baseline with
+# numpy alone before trusting anything below it.
+numpy==2.4.2
 
-# Core stack
-pandas==2.2.2
-pyarrow==16.1.0
-lightgbm==4.3.0
-scipy==1.13.1
-scikit-learn==1.5.0
+# Core stack. Nothing in the Milestone 1 harness imports these yet; they are here
+# for the feature and model work in Milestone 2.
+pandas==3.0.5
+pyarrow==25.0.1
+scipy==1.18.1
+scikit-learn==1.9.0
+lightgbm==4.7.0
 
 # Config, logging, testing
-PyYAML==6.0.1
-pytest==8.2.0
+PyYAML==6.0.3
+pytest==9.1.1
 
 # Cross-platform process monitoring (memory ceilings on Windows,
 # where the POSIX `resource` module is unavailable)
-psutil==5.9.8
+psutil==7.2.2
 
-# LLM provider. Keep only the one you use, and record token counts from
-# the response object on every call -- Feasibility scoring depends on it.
-anthropic==0.34.2
-# openai==1.40.0
+# LLM provider. Not yet installed; Milestone 2. Keep only the one you use, and
+# record token counts from the response object on every call -- Feasibility
+# scoring depends on it and cannot be reconstructed after the fact.
+anthropic>=0.34.2
+# openai>=1.40.0

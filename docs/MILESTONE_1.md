@@ -3,8 +3,9 @@
 A review document. Written to be handed to a reviewer (human or model) with no prior
 context on this repository.
 
-**Status:** complete and verified. 10 commits, ~2,400 lines, 72 tests passing (5 marked
-slow), `scripts/verify_setup.py` green on all 11 checks.
+**Status:** complete and verified. 80 tests passing (6 marked slow),
+`scripts/verify_setup.py` green on all 11 checks. Reviewed once; §7 and §8 record what
+that review changed.
 
 **Scope discipline:** Milestone 1 is the foundation only. The agent loop, the LLM
 integration, the sandbox, the feature registry and the model runners are Milestone 2 and
@@ -174,7 +175,7 @@ Files, with line counts:
 | `harness/submit.py` | 106 | write / check / score |
 | `harness/convergence.py` | 467 | the stopping rule, counters, tried-set, restart |
 | `scripts/verify_setup.py` | 314 | all of the above, end to end, with a summary |
-| `tests/` | 856 | 72 tests across four files plus fixtures |
+| `tests/` | 1,048 | 80 tests across five files plus fixtures |
 
 ---
 
@@ -514,11 +515,20 @@ both say the window is `20220408–20220421`; the standard log simply has no 8 A
 Row counts still match exactly, so this is a fact rather than a bug — but it was written
 as an assertion, it failed, and it is now pinned as measured.
 
-**The verified environment does not match `requirements.txt`.** The file pins
-`numpy==1.26.4`. Everything here ran on **Python 3.14.0 with numpy 2.4.2** and reproduces
-0.6015 against the published 0.6016. Either relax the pin to a floor or install to it
-before the scored run — but do not leave it implicit. `verify_setup.py` prints the
-interpreter and numpy version on every run so the record is never guessed.
+**`requirements.txt` did not describe this machine — now resolved.** The old pins
+(`numpy==1.26.4`, `pandas==2.2.2`, ...) predate this interpreter and were never installed.
+The full stack has since been installed (numpy 2.4.2, pandas 3.0.5, pyarrow 25.0.1, scipy
+1.18.1, scikit-learn 1.9.0, lightgbm 4.7.0) and **the contract test re-run afterwards
+still gives 0.6015**. `numpy` was not downgraded by the install. `requirements.txt` now
+pins measured versions. `verify_setup.py` prints the interpreter and numpy version on
+every run so the record is never guessed.
+
+**Captured organiser stdout crashes a cp1252 console on print.** `run_starter_script`
+captures as UTF-8 correctly, but the Windows console encoding is independent of that.
+Found while verifying `submit.py --make`: the subprocess succeeded, the submission was
+written, and the reporting line raised `UnicodeEncodeError`. In M2 the loop prints and
+logs tool output constantly, so every such sink needs an explicit UTF-8 encoding —
+otherwise a successful experiment reads as a crashed one.
 
 **FM training wall clock is ~63 s on this machine**, not the ~110 s recorded earlier.
 Relevant when sizing the agent's per-iteration timeout in M2.
@@ -542,8 +552,12 @@ Listed deliberately. These are the weakest points.
    the filter is defence in depth.
 4. **`assert_record_clean` is not yet wired into a logger**, because the logger is M2. It
    is tested in isolation. The M2 logger must call it on every record before writing.
-5. **No `test_determinism.py` yet.** CLAUDE.md lists it; it belongs with the model runners
-   in M2, since there is currently no model of ours to be deterministic about.
+5. ~~No `test_determinism.py`.~~ **Added on review** (8 tests). Pins the loader
+   byte-for-byte across independent loads, cache/no-cache agreement, row order at probe
+   positions, encoder repeatability, that the vocabulary is built from train only, metric
+   determinism, and that a seeded baseline reproduces while different seeds diverge. It
+   also asserts the metric is order-sensitive, so the other determinism assertions cannot
+   pass vacuously. Model determinism still waits for the M2 runners.
 6. **The canary threshold (0.80) is a single scalar** with no per-metric breakdown. A leak
    that improves GAUC but not nDCG@5 could land under 0.80. Cheap to extend.
 7. **The in-process split cache is keyed by path only.** If a future caller mutates the
@@ -606,3 +620,78 @@ M1.9  scripts/verify_setup.py, plus the M1 decision record
 | `scripts/verify_setup.py` end to end with a summary | done, 11 checks, all green |
 | every module documents what it owns and never does | done |
 | small commits, one per item | 10 commits |
+
+
+---
+
+## 12. Review responses
+
+An external review raised twelve points. Recorded here with what was verified or changed.
+
+### Resolved by verification (no change needed)
+
+**`encode()` vs the strip.** The review posed a binary — placeholder labels (tuples stay
+7-long, so the `len == 6` assertion is wrong) or reimplement encoding (so
+`submit.py --make` breaks). A third path avoids both: the placeholder is appended to a
+*temporary copy* inside `harness.data.encode()`, the organisers' encoder runs, and the
+resulting test `y` is replaced with `None` before returning. Stored tuples are never
+widened. Verified: stored width 6 before and after, `encode()` returns
+`X(170588, 5)` with `y is None`, and `starter/submit.py --make --split test` runs to
+completion and its 170,588-row output passes `harness.submit.check`. Covered by
+`test_encode_returns_no_test_labels` and `test_encode_is_repeatable`.
+
+**Stdout filter aggressiveness.** The row-count line survives, because redaction requires
+a metric token *and* a split token. `{'train': 1141112, 'valid': 124909, 'test': 170588}`
+has no metric word. Pinned by `test_filter_keeps_validation_and_row_counts`, which asserts
+`"'test': 170588"` is still present, and used in anger by
+`test_fm_baseline_reproduces`, which parses those counts out of filtered stdout.
+
+**Wall clock across a restart.** Resumes; it does not reset.
+`test_wall_clock_accumulates_across_sessions` advances a fake clock two hours, ends the
+session, reopens with a fresh clock at an unrelated origin, and asserts the budget picks
+up at two hours and fires at six. `elapsed_seconds` is persisted in the same file as the
+strike count.
+
+**Convergence edge cases.** First iteration: `best_before is None`, gain is `inf`, never a
+strike (`test_first_score_is_never_a_strike`). Fewer than N scored iterations: cannot
+converge (`test_no_convergence_before_three_scored_iterations`). Errored iteration:
+advances the counter, increments `failed_iterations`, leaves the streak untouched, and
+never enters the scored history (`test_a_failed_iteration_burns_one_of_fifty_but_not_a_strike`,
+`test_failures_alone_never_converge_by_no_improvement`).
+
+**Where state persists.** `ConvergenceTracker` owns its own JSON file, written atomically
+(`tmp` + `replace`) after every mutation, holding the rule parameters, both counters, the
+best score and its iteration, the accumulated clock, the full history and the tried-set.
+Not temporary. M2's `ledger.py` handles proposals, patches and checkpoint artefacts; the
+tracker stays authoritative for the counters, and the two must not both own an iteration
+number.
+
+**The item-popularity rung.** Was run. It is in the contract test at 0.5807 (matching the
+published figure exactly), untagged as slow so it runs on every fast pass.
+
+### Changed as a result
+
+**`test_determinism.py` added.** See §8.5.
+
+**Dependency stack installed and re-verified.** See §7.
+
+**`requirements.txt` rewritten** to record measured versions rather than aspirational
+pins.
+
+**D10 recorded** for the cp1252 console trap.
+
+### Accepted for Milestone 2
+
+The M2 sketch was under-specified. Four additions, one correction and one process change,
+all carried into the M2 plan: a model runner (the FM must be reimplemented against
+label-stripped splits, because `run_fm` computes test metrics); `agent/llm.py` with token
+accounting and `LLM_PROVIDER=none` from the first commit; building the
+`run_experiment(patch_path, seed)` boundary first and developing the agent against a stub;
+and checkpoint save/restore on keep-or-reject. The correction: the tried-set already
+exists (`ConvergenceTracker.has_tried` / `mark_tried`, persisted and tested), so it is not
+outstanding work.
+
+**The M2 acceptance criterion was mis-specified** — it bolted an engineering result ("the
+loop runs unattended") to a research result ("it beat the baseline"). These should be
+separate gates. Note that CLAUDE.md §12.2 states the combined form, so splitting them is a
+deviation from the spec and needs an explicit decision rather than a quiet edit.

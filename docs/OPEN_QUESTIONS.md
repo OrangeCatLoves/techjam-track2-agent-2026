@@ -227,12 +227,29 @@ standard log simply contains no rows dated 8 April. Not a discrepancy with the
 rule, and not a bug: the row count still matches exactly. Pinned as measured in
 `test_split_date_boundaries` so that a future loader change cannot move it quietly.
 
-### D8 — The verified environment does not match `requirements.txt`
+### D8 — `requirements.txt` now records the verified environment (RESOLVED)
 
-`requirements.txt` pins `numpy==1.26.4`. The baseline was reproduced, and Milestone
-1 verified, on **Python 3.14.0 with numpy 2.4.2**, giving validation primary 0.6015
-against the published 0.6016. The pin should either be relaxed to a floor or the
-environment brought to the pin before the scored run; it must not be left implicit.
+The old pins (`numpy==1.26.4`, `pandas==2.2.2`, ...) predated this interpreter and
+were never installed here. Resolved by installing the full stack and re-verifying:
+
+| | pinned before | installed and verified |
+|---|---|---|
+| python | (unstated) | 3.14.0 |
+| numpy | 1.26.4 | 2.4.2 |
+| pandas | 2.2.2 | 3.0.5 |
+| pyarrow | 16.1.0 | 25.0.1 |
+| scipy | 1.13.1 | 1.18.1 |
+| scikit-learn | 1.5.0 | 1.9.0 |
+| lightgbm | 4.3.0 | 4.7.0 |
+| PyYAML | 6.0.1 | 6.0.3 |
+| pytest | 8.2.0 | 9.1.1 |
+| psutil | 5.9.8 | 7.2.2 |
+
+**The contract test was re-run after the install and still passes**: FM validation
+primary 0.6015, and the full ladder in order. `numpy` was not downgraded by the
+install. `requirements.txt` now pins the measured versions rather than aspirational
+ones. `anthropic` is still not installed; that is Milestone 2.
+
 `scripts/verify_setup.py` prints the interpreter and numpy version on every run so
 the record is never guessed.
 
@@ -243,3 +260,21 @@ the record is never guessed.
 | FM | 0.6016 | 0.001 | measured 0.6015; the number to beat |
 | item popularity | 0.5807 | 0.001 | pure statistics, no training, no seed variance; measured 0.5807 exactly |
 | random | 0.4834 | 0.002 | the published figure is a mean over seeds 0-4; we run one seed, measured 0.4827 |
+
+
+### D10 — Captured organiser stdout must never be printed to a cp1252 console
+
+`harness.guards.run_starter_script` captures subprocess output as UTF-8, which is
+correct: the starter kit's messages are bilingual and contain Chinese. But printing
+that captured text to a Windows console still raises
+`UnicodeEncodeError: 'charmap' codec can't encode characters`, because the console
+encoding is cp1252 and is independent of how the text was read.
+
+Found while verifying `submit.py --make` end to end: the subprocess succeeded, the
+submission was written correctly, and the *reporting* line crashed.
+
+Consequence for Milestone 2: the agent loop will print and log tool output
+constantly. Anything that writes captured starter text to stdout or to a file must
+set an explicit UTF-8 encoding, and log files must be opened with
+`encoding='utf-8'`. A crash here would be read as a failed experiment when the
+experiment actually succeeded.

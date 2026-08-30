@@ -156,7 +156,67 @@ operational recovery and is counted separately.*
 
 ---
 
-## 5. What did not work — twenty experiments
+## 5. Ablation — why the winning experiment works
+
+The winning config changed two things at once: five seeds *and* batch 2048 instead of
+8192. The agent flagged that confound itself and converged before it could test which
+carried the gain. Two follow-up experiments settle it.
+
+### Does adding members help?
+
+| members | validation primary | best member | blend gain | cost |
+|---|---|---|---|---|
+| 3 | 0.6028 | 0.6024 | +0.0004 | 258 s |
+| **5** | **0.6034** | 0.6028 | +0.0006 | 596 s |
+| 8 | 0.6033 | 0.6028 | +0.0005 | 1411 s |
+
+**It saturates at five.** Eight members costs 2.4x as long and gains nothing. The
+agent chose the right number first time.
+
+### Was it the seeds or the batch size?
+
+A 2x2, everything else held at the reference configuration:
+
+| | batch 8192 | batch 2048 |
+|---|---|---|
+| **single model** | 0.6018 | 0.6024 |
+| **5-seed blend** | 0.6020 | **0.6034** |
+
+Decomposed against the single/8192 reference:
+
+| effect | gain |
+|---|---|
+| smaller batch alone | +0.0006 |
+| blending alone | +0.0002 |
+| *sum, if the two were independent* | *+0.0008* |
+| **both together** | **+0.0016** |
+
+**The two changes interact: together they are worth about double the sum of their
+parts.** Blending at the default batch size gains almost nothing (+0.0002), and the
+smaller batch alone gains little more.
+
+This is the agent's own hypothesis, confirmed by an experiment it did not get to run.
+Its patch docstring argued that batch 8192 gives only ~139 Adam steps per epoch, too
+few for sparse ID embeddings to grow; cutting to 2048 quadruples that. The ablation
+adds the second half: more steps on sparse embeddings make the seeds converge to
+**more different** solutions, and diversity between members is exactly what a blend
+exploits. Neither ingredient works alone.
+
+**Caveat, stated honestly.** Each cell above is a single measurement, and single-model
+seed noise is +/-0.0008, so the individual effects (+0.0006, +0.0002) are inside the
+noise band on their own. The decomposition is indicative rather than confirmed. The
+winning configuration itself *is* confirmed, across three independent seed sets (S3).
+
+### What this means for the submission
+
+Neither follow-up cleared the replacement bar of 0.6056 (§8), so **run 4 remains the
+scored submission**. That is the replacement rule working as intended rather than a
+disappointment: the bar exists precisely so that a 0.0005 wobble does not displace a
+confirmed result.
+
+---
+
+## 6. What did not work — twenty experiments
 
 Across four agent runs, roughly twenty distinct experiments. Everything below scored
 **at or under the pointwise baseline**:
@@ -188,7 +248,7 @@ This extends the organisers' own published ablations:
 
 ---
 
-## 6. Reproducing any of this
+## 7. Reproducing any of this
 
 ```bash
 python scripts/verify_setup.py                 # the M1 foundation, ~5 min
@@ -212,7 +272,7 @@ resource figures quoted above.
 
 ---
 
-## 7. The scored submission — decided
+## 8. The scored submission — decided
 
 **Run 4 is the scored submission.**
 

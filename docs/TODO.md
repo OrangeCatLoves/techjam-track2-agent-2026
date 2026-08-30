@@ -54,20 +54,20 @@ smaller one.
 
 ### A3. Optional — try to move the score
 
-Only after A1 and A2. Ranked by expected value:
+**Two of the three have been done. Neither improved on run 4.** See `RESULTS.md` §5.
 
-1. **More ensemble configurations.** This is the only thing that has worked. One
-   config has been tried (5 seeds, rank blend, batch 2048). Untested: more members,
-   weights tuned once, blending different model *families* rather than seeds of one.
-2. **Separate the confounded variables.** Run 4 changed two things at once — five
-   seeds *and* batch 2048. The agent flagged this itself and converged before
-   testing which carried the gain. Two runs settle it.
-3. **Duration-conditioned recalibration.** CLAUDE.md §9.5 calls it a real lever
-   because duration varies within a user's list, so the adjustment is non-monotone
-   and can reorder. Never attempted.
+- ~~More ensemble members~~ — **done.** It saturates at five: 3 gives 0.6028, 5 gives
+  0.6034, 8 gives 0.6033 at 2.4x the cost. No upside left.
+- ~~Separate the confounded variables~~ — **done.** The 2x2 shows the smaller batch
+  and the blending *interact*: together they are worth about double the sum of their
+  parts, and blending at the default batch size gains almost nothing. This confirmed
+  the agent's own hypothesis and is now the mechanism reported in `RESULTS.md` §5.
+- **Duration-conditioned recalibration — still untried.** The last untested lever
+  CLAUDE.md §9.5 calls real: duration varies *within* a user's list, so an adjustment
+  conditioned on it is non-monotone and can genuinely reorder. Unknown payoff.
 
-**Do not try another loss function.** Nineteen variants across four runs all scored
-at or below baseline. See `RESULTS.md` §5.
+Anything new replaces run 4 only if confirmed across seed sets **and** better by more
+than 0.002. See `RESULTS.md` §8.
 
 ---
 

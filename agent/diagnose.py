@@ -161,11 +161,27 @@ def diagnose(result: Any, *, iteration: int, best_primary: float | None,
                                  else f'{convergence.best_primary:.4f}'),
             'time_remaining_hours': round(convergence.remaining_seconds / 3600, 2),
         }
+        # The strike economics, stated from iteration one rather than at the
+        # brink. A measured control run converged after FOUR iterations because
+        # three consecutive tuning changes each gained under 0.002 -- it used 4 of
+        # its 50 iterations and 6 minutes of its 6 hours. An agent that does not
+        # know the rule's shape will spend its run the same way.
+        #
+        # This is teaching the rules of the game, not the answer: which experiment
+        # to run is still entirely the agent's to choose.
         if convergence.strikes >= 2:
             warnings.append(
                 'One more iteration gaining 0.002 or less ends the run. A '
                 'non-improving iteration cannot lower the saved best, so a large '
                 'structural change costs nothing that a cautious one preserves.')
+        else:
+            warnings.append(
+                'Three consecutive iterations gaining 0.002 or less end the run, '
+                'however many of the 50 remain. Small tuning changes therefore '
+                'spend the run quickly: a measured scripted search over '
+                'hyperparameters converged after four iterations. A rejected '
+                'experiment cannot lower the saved best, so an ambitious change '
+                'risks nothing that a cautious one protects.')
 
     diagnosis = Diagnosis(iteration=iteration, outcome=outcome, facts=facts,
                           metrics=metrics, run_state=run_state,

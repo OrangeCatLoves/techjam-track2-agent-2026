@@ -571,3 +571,53 @@ and the report carry both numbers.
 Innovation and Impact criteria than "our agent scored Y", and it costs one
 deterministic run of about half an hour to be able to say it. If the fallback wins,
 that is the finding, and we report it.
+
+
+### D20 result - the deterministic control, measured
+
+Run to convergence with real training, no LLM, no tokens. `runs/control-main`.
+
+| | |
+|---|---|
+| best validation primary | **0.6025** |
+| vs published baseline 0.6015 | **+0.0010** |
+| iterations | 4 (converged: no_improvement) |
+| wall clock | 6.1 min |
+| tokens | 0 |
+| submission | 170,588 rows, passes `--check` |
+
+Trajectory:
+
+| iter | change | primary | gain | strike |
+|---|---|---|---|---|
+| 1 | baseline reproduction | 0.6015 | - | no |
+| 2 | patience 4 -> 8 | 0.6015 | 0.0000 | yes |
+| 3 | lr 0.001 -> 0.0005 | 0.6014 | -0.0001 | yes |
+| 4 | l2 1e-6 -> 1e-5 | 0.6025 | +0.0010 | yes |
+
+**Three findings.**
+
+**The scripted search does not beat the baseline in any meaningful sense.** +0.0010
+is inside the noise floor: the organisers' 5-seed std is 0.0008 and adjacent epochs
+of one run swing ~0.0009. Under D19 this would not count as a result. That
+independently confirms the organisers' finding that hyperparameters are not the
+lever on this benchmark, and it sets an honest bar: the agent has to find something
+structural, not tune.
+
+**Iteration 1 reproduced the published baseline exactly** (0.6015), which satisfies
+CLAUDE.md 6.4 -- the agent reproduces the baseline itself rather than being told it.
+
+**The run converged after four iterations.** This is the strategically important
+one. Three consecutive gains of 0.002 or less ends a run regardless of how many of
+the 50 iterations remain, so a run that opens with cautious tuning is over in
+minutes, having spent 4 of 50 iterations and 6 of 360 minutes.
+
+Note that Q3 does not change this outcome: under the block reading,
+best(last 3) - best(before) = 0.6025 - 0.6015 = 0.0010, which is also under epsilon.
+Both readings converge here.
+
+**Consequence, applied.** `agent/diagnose.py` now states the strike economics from
+iteration one rather than at the brink: three small gains end the run, and a
+rejected experiment cannot lower the saved best, so an ambitious change risks
+nothing that a cautious one protects. That is teaching the agent the rules of the
+game, not the answer -- which experiment to run remains entirely its own choice.

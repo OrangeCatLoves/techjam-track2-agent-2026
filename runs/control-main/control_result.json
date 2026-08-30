@@ -1,0 +1,30 @@
+{
+  "best_val_primary": 0.6025029206269913,
+  "baseline": 0.6015,
+  "delta_vs_baseline": 0.001002920626991255,
+  "iterations": 4,
+  "converged": true,
+  "reason": "no_improvement",
+  "wall_clock_minutes": 6.12,
+  "submission": {
+    "written": true,
+    "path": "runs\\control-main\\submission.csv",
+    "rows": 170588,
+    "from_iteration": 4,
+    "val_primary": 0.6025029206269913,
+    "flagged_for_review": false
+  },
+  "ledger": {
+    "run_id": "control-main",
+    "run_dir": "runs\\control-main",
+    "records": 4,
+    "kept": 2,
+    "rejected": 2,
+    "failed": 0,
+    "best_iteration": 4,
+    "best_val_primary": 0.6025029206269913,
+    "best_flagged_for_review": false,
+    "canary_trips": 0,
+    "review_flags": 0
+  }
+}

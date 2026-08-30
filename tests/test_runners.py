@@ -440,3 +440,34 @@ def test_the_agent_is_told_the_ensemble_capability_exists():
     assert 'ensemble' in P.CONFIG_KEYS
     assert 'within_user_rank' in P.CONFIG_KEYS
     assert 'ensemble' in P.TARGET_STAGES
+
+
+def test_the_ensemble_tolerates_the_seed_the_child_always_injects():
+    """Regression: the agent's first ensemble attempt crashed on this.
+
+    harness/_run_patch.py sets config['seed'] on EVERY patch, so an ensemble
+    CONFIG always arrives carrying a seed. train_ensemble supplies its own per
+    member, and the two collided with "got multiple values for keyword argument
+    'seed'". The capability existed and was unusable, which is worse than absent:
+    the agent reasoned its way to it, hit a crash, and went back to objectives
+    for the rest of the run.
+    """
+    import inspect
+    source = inspect.getsource(R.train_ensemble)
+    assert "train_kwargs.pop('seed', None)" in source
+
+
+@pytest.mark.slow
+def test_an_ensemble_config_shaped_like_the_child_sends_it(splits, tmp_path):
+    """The exact call shape harness/_run_patch.py builds."""
+    config = {'seed': 0, 'max_epochs': 2, 'patience': 1}
+    ensemble = config.pop('ensemble', 2)
+    result = R.train_ensemble(splits, seeds=tuple(range(ensemble)),
+                              checkpoint_path=tmp_path / 'e.npz', **config)
+    assert result.val_primary > 0.4
+    assert len(result.diagnostics['ensemble']['members']) == 2
+
+
+def test_an_empty_ensemble_is_rejected():
+    with pytest.raises(ValueError):
+        R.train_ensemble(seeds=())

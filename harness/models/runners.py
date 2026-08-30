@@ -445,6 +445,17 @@ def train_ensemble(splits: Dict[str, list] | None = None,
     reproduce the exact ranking that was scored.
     """
     splits = splits if splits is not None else hdata.load()
+
+    # `seed` is supplied per member from `seeds`, so a caller-level `seed` would
+    # collide with it. The child process injects one into every CONFIG, so this
+    # is the normal path rather than an edge case: dropping it here is what makes
+    # an ensemble expressible in CONFIG at all.
+    train_kwargs.pop('seed', None)
+    train_kwargs.pop('checkpoint_path', None)
+
+    if not seeds:
+        raise ValueError('an ensemble needs at least one seed')
+
     enc, dim = hdata.encode(splits)
     Xva, yva, uva = enc['valid']
     groups_va = build_groups(splits, 'valid', 'user_id')

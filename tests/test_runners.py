@@ -13,6 +13,8 @@ round-tripping, which is what makes keep-or-reject possible at all.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -349,3 +351,92 @@ def test_diagnostics_report_the_measured_cost(short_run):
     assert cost['relative_to_reference'] > 0
     assert cost['timeout_minutes'] > 0
     assert short_run.diagnostics['objective']['kind'] == hlosses.POINTWISE
+
+
+# --------------------------------------------------------------------------
+# ensembling: the fifth target_stage, which had no implementation
+# --------------------------------------------------------------------------
+
+def test_rank_normalisation_preserves_order_within_a_group():
+    """On ONE model this is a no-op for the metric, and must be.
+
+    It is monotone within each list, so it cannot change GAUC or nDCG@5. If it
+    reordered anything, a single-model experiment would silently score
+    differently for a reason that has nothing to do with the model.
+    """
+    groups = np.array([0, 0, 0, 1, 1])
+    scores = np.array([5.0, 1.0, 3.0, 2.0, 7.0])
+    ranked = R.rank_normalise(scores, groups)
+    for g in (0, 1):
+        m = groups == g
+        assert list(np.argsort(-scores[m])) == list(np.argsort(-ranked[m]))
+
+
+def test_rank_normalisation_keeps_ties_tied():
+    """A tie is a decision the model declined to make.
+
+    Breaking it here would invent an ordering the evaluator then treats as real.
+    """
+    groups = np.array([0, 0, 0])
+    ranked = R.rank_normalise(np.array([2.0, 2.0, 5.0]), groups)
+    assert ranked[0] == ranked[1]
+    assert ranked[2] > ranked[0]
+
+
+def test_rank_normalisation_handles_single_item_lists():
+    ranked = R.rank_normalise(np.array([3.0]), np.array([0]))
+    assert ranked[0] == 0.5
+
+
+def test_blending_two_models_on_different_scales():
+    """Why rank normalisation earns its place.
+
+    Both models rank this user identically, but one uses a 100x wider scale. A
+    raw average is dominated by the loud one; a rank average is not.
+    """
+    groups = np.zeros(4, dtype=int)
+    quiet = np.array([0.1, 0.2, 0.3, 0.4])
+    loud = np.array([-40.0, -30.0, -20.0, -10.0])
+    ranked = R.blend([quiet, loud], groups, normalise='within_user_rank')
+    raw = R.blend([quiet, loud], groups, normalise='none')
+    assert list(np.argsort(ranked)) == [0, 1, 2, 3]
+    assert np.allclose(ranked, R.rank_normalise(quiet, groups))
+    assert not np.allclose(raw, ranked)
+
+
+def test_blend_rejects_a_weight_mismatch():
+    with pytest.raises(ValueError):
+        R.blend([np.zeros(3), np.zeros(3)], np.zeros(3, dtype=int), weights=[1.0])
+
+
+def test_blend_rejects_nothing_to_blend():
+    with pytest.raises(ValueError):
+        R.blend([], np.zeros(0, dtype=int))
+
+
+@pytest.mark.slow
+def test_the_ensemble_runner_trains_and_blends(splits, tmp_path):
+    """The capability, not the result. Whether blending WINS is the agent's
+    experiment to run; this asserts only that it can be run at all."""
+    result = R.train_ensemble(splits, seeds=(0, 1), max_epochs=2, patience=1,
+                              checkpoint_path=tmp_path / 'ensemble.npz')
+    assert result.val_primary > 0.4
+    ensemble = result.diagnostics['ensemble']
+    assert len(ensemble['members']) == 2
+    assert ensemble['seeds'] == [0, 1]
+    assert 'blend_over_best_member' in ensemble, (
+        'the agent must be able to see whether blending added anything')
+    assert Path(result.checkpoint).exists()
+    guards.assert_record_clean(result.diagnostics, where='ensemble diagnostics')
+
+
+def test_the_agent_is_told_the_ensemble_capability_exists():
+    """It cannot propose what it does not know the harness can run.
+
+    All five target_stages are declared valid; four had implementations and
+    `ensemble` did not, so a proposal for it could never have executed.
+    """
+    from agent import propose as P
+    assert 'ensemble' in P.CONFIG_KEYS
+    assert 'within_user_rank' in P.CONFIG_KEYS
+    assert 'ensemble' in P.TARGET_STAGES

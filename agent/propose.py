@@ -192,7 +192,21 @@ Every key is optional; an empty CONFIG trains the reference baseline.
   patience  int   early-stop patience on validation primary (default 4)
 
 The trainer handles batching, early stopping on validation primary, restoring the
-best epoch, and scoring. You do not write any of that."""
+best epoch, and scoring. You do not write any of that.
+
+Adding an `ensemble` key trains several models and blends them into one ranking,
+scored as a single experiment:
+
+  ensemble  int | list  number of seeds, or an explicit list of seeds
+  normalise str         "within_user_rank" (default) or "none"
+  weights   list        per-member weights; defaults to equal
+
+  CONFIG = {"ensemble": 3, "normalise": "within_user_rank"}
+
+Cost scales with the number of members: three seeds is three training runs.
+`diagnostics["ensemble"]` reports each member's own score and how the blend
+compares to the best of them, so you can tell whether blending added anything or
+merely averaged."""
 
 
 def build_prompt(diagnosis_text: str, *, corpus: str, capabilities: Dict[str, Any],

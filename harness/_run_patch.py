@@ -82,7 +82,21 @@ def main(argv=None) -> int:
             keep = int(len(splits['train']) * args.subsample)
             splits = dict(splits, train=splits['train'][:keep])
 
-        result = runners.train_fm(splits, checkpoint_path=args.checkpoint, **config)
+        # An `ensemble` key routes to the multi-model runner. Everything else is
+        # a single model. The agent expresses which it wants in CONFIG rather
+        # than the harness guessing from the target_stage it declared.
+        ensemble = config.pop('ensemble', None)
+        if ensemble:
+            seeds = ensemble if isinstance(ensemble, (list, tuple)) else \
+                list(range(int(ensemble)))
+            result = runners.train_ensemble(
+                splits, seeds=tuple(seeds),
+                normalise=config.pop('normalise', 'within_user_rank'),
+                weights=config.pop('weights', None),
+                checkpoint_path=args.checkpoint, **config)
+        else:
+            result = runners.train_fm(splits, checkpoint_path=args.checkpoint,
+                                      **config)
 
         payload = {
             'ok': True,

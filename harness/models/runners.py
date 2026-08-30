@@ -358,6 +358,187 @@ def train_fm(splits: Dict[str, list] | None = None,
 # checkpoints -- what makes keep-or-reject possible
 # --------------------------------------------------------------------------
 
+def rank_normalise(scores: np.ndarray, groups: np.ndarray) -> np.ndarray:
+    """Replace each score with its rank inside its own group, scaled to [0, 1].
+
+    On a **single** model this is a no-op for the metrics: it is monotone within
+    each list, so it cannot change GAUC or nDCG@5, and the organisers confirm they
+    measured that.
+
+    It is not a no-op when **averaging** models. Two models can put a user's items
+    in the same order while disagreeing wildly about the size of the gaps, and a
+    raw average is then dominated by whichever model happens to use a wider scale.
+    Averaging ranks compares like with like (CLAUDE.md 9.5).
+    """
+    out = np.zeros(len(scores), dtype=np.float64)
+    order = np.argsort(groups, kind='stable')
+    sorted_groups = groups[order]
+    starts = np.flatnonzero(np.r_[True, sorted_groups[1:] != sorted_groups[:-1]])
+    ends = np.r_[starts[1:], sorted_groups.size]
+    for start, end in zip(starts, ends):
+        idx = order[start:end]
+        size = len(idx)
+        if size == 1:
+            out[idx] = 0.5
+            continue
+        # Average ranks for ties, so a tie stays a tie rather than becoming an
+        # arbitrary order that the evaluator would then treat as a real decision.
+        values = scores[idx]
+        temp = np.argsort(values, kind='stable')
+        ranks = np.empty(size, dtype=np.float64)
+        ranks[temp] = np.arange(size, dtype=np.float64)
+        unique, inverse, counts = np.unique(values, return_inverse=True,
+                                            return_counts=True)
+        if len(unique) < size:
+            sums = np.zeros(len(unique))
+            np.add.at(sums, inverse, ranks)
+            ranks = (sums / counts)[inverse]
+        out[idx] = ranks / (size - 1)
+    return out
+
+
+def blend(score_vectors: Sequence[np.ndarray], groups: np.ndarray,
+          weights: Sequence[float] | None = None,
+          normalise: str = 'within_user_rank') -> np.ndarray:
+    """Combine several models' scores into one ranking.
+
+    ``normalise='within_user_rank'`` rank-normalises each model within each user
+    before averaging, which is the only form that means anything here; ``'none'``
+    averages raw scores and is offered so the difference can be measured rather
+    than asserted.
+    """
+    if not score_vectors:
+        raise ValueError('nothing to blend')
+    weights = list(weights) if weights is not None else [1.0] * len(score_vectors)
+    if len(weights) != len(score_vectors):
+        raise ValueError(f'{len(weights)} weights for {len(score_vectors)} models')
+    total = float(sum(weights))
+    if total <= 0:
+        raise ValueError('blend weights must sum to something positive')
+
+    stacked = np.zeros(len(score_vectors[0]), dtype=np.float64)
+    for weight, scores in zip(weights, score_vectors):
+        values = np.asarray(scores, dtype=np.float64)
+        if normalise == 'within_user_rank':
+            values = rank_normalise(values, groups)
+        elif normalise != 'none':
+            raise ValueError(f'unknown normalise {normalise!r}')
+        stacked += weight * values
+    return stacked / total
+
+
+def train_ensemble(splits: Dict[str, list] | None = None,
+                   *,
+                   seeds: Sequence[int] = (0, 1, 2),
+                   normalise: str = 'within_user_rank',
+                   weights: Sequence[float] | None = None,
+                   checkpoint_path: str | Path | None = None,
+                   with_diagnostics: bool = True,
+                   **train_kwargs: Any) -> TrainResult:
+    """Train one model per seed and blend their validation scores.
+
+    Selection is still on validation primary, and still on the blend as a whole:
+    the members are not individually selected, so this is one experiment rather
+    than *n*.
+
+    The checkpoint saves every member plus the blend recipe, so the submission can
+    reproduce the exact ranking that was scored.
+    """
+    splits = splits if splits is not None else hdata.load()
+    enc, dim = hdata.encode(splits)
+    Xva, yva, uva = enc['valid']
+    groups_va = build_groups(splits, 'valid', 'user_id')
+
+    import tempfile
+
+    members: List[TrainResult] = []
+    member_scores: List[np.ndarray] = []
+    states = []
+    started = time.time()
+
+    # Members are checkpointed to a scratch directory so their weights survive
+    # long enough to be blended and saved together. Only the ensemble checkpoint
+    # is kept; the members are an implementation detail of one experiment.
+    with tempfile.TemporaryDirectory() as scratch:
+        for seed in seeds:
+            member_path = Path(scratch) / f'member_{seed}.npz'
+            member = train_fm(splits, seed=seed, with_diagnostics=False,
+                              checkpoint_path=member_path, **train_kwargs)
+            members.append(member)
+            model = load_checkpoint_state(member)
+            states.append(model)
+            member_scores.append(model.predict(Xva))
+
+    blended = blend(member_scores, groups_va, weights=weights, normalise=normalise)
+    final = hevaluate.evaluate(uva, yva, blended)
+    seconds = time.time() - started
+
+    guards.check_canary(float(final['primary']),
+                        context={'runner': 'train_ensemble', 'seeds': list(seeds),
+                                 'normalise': normalise})
+
+    diagnostics: Dict[str, Any] = {}
+    if with_diagnostics:
+        member_primaries = [m.val_primary for m in members]
+        diagnostics = {
+            'metrics': {'val_gauc': float(final['GAUC']),
+                        'val_ndcg5': float(final['nDCG@5']),
+                        'val_primary': float(final['primary'])},
+            'fit': {'train_primary': None, 'val_primary': float(final['primary']),
+                    'gap': None,
+                    'epochs_run': max(m.epochs_run for m in members),
+                    'best_epoch': max(m.best_epoch for m in members)},
+            'fields': field_contributions(states[0], enc['train'][0]),
+            'ensemble': {
+                'seeds': list(seeds), 'normalise': normalise,
+                'members': [round(p, 6) for p in member_primaries],
+                'best_member': round(max(member_primaries), 6),
+                'mean_member': round(float(np.mean(member_primaries)), 6),
+                'blend_over_best_member': round(
+                    float(final['primary']) - max(member_primaries), 6),
+            },
+            'cost': {'seconds': round(seconds, 1),
+                     'reference_fm_seconds': REFERENCE_FM_SECONDS,
+                     'relative_to_reference': round(seconds / REFERENCE_FM_SECONDS, 2),
+                     'members_trained': len(members)},
+            'objective': {'kind': 'ensemble', 'name': f'{len(seeds)}-seed blend'},
+        }
+        guards.assert_record_clean(diagnostics, where='train_ensemble diagnostics')
+
+    saved: str | None = None
+    if checkpoint_path is not None:
+        path = Path(checkpoint_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            path, ensemble=np.array(1),
+            normalise=np.array(normalise), dim=np.array(dim),
+            weights=np.array(weights if weights is not None
+                             else [1.0] * len(states), dtype=np.float64),
+            **{f'V{i}': m.V for i, m in enumerate(states)},
+            **{f'W{i}': m.W for i, m in enumerate(states)},
+            **{f'b{i}': np.float32(m.b) for i, m in enumerate(states)})
+        saved = str(path)
+
+    return TrainResult(val_gauc=float(final['GAUC']),
+                       val_ndcg5=float(final['nDCG@5']),
+                       val_primary=float(final['primary']),
+                       diagnostics=diagnostics, checkpoint=saved,
+                       seconds=seconds, seed=int(seeds[0]),
+                       epochs_run=max(m.epochs_run for m in members),
+                       best_epoch=max(m.best_epoch for m in members),
+                       epoch_history=[])
+
+
+def load_checkpoint_state(member: TrainResult):
+    """Rebuild a member model from the checkpoint a train_fm call saved."""
+    if not member.checkpoint:
+        raise ValueError('ensemble members must be trained with a checkpoint_path')
+    blob = np.load(member.checkpoint)
+    model = PluggableFM(blob['V'].shape[0], k=blob['V'].shape[1])
+    model.V, model.W, model.b = blob['V'], blob['W'], np.float32(blob['b'])
+    return model
+
+
 def save_checkpoint(model, path: str | Path) -> Path:
     """Persist the trainable parameters. Nothing about the test split is stored."""
     path = Path(path)

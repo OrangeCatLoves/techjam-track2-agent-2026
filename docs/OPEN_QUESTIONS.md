@@ -621,3 +621,45 @@ iteration one rather than at the brink: three small gains end the run, and a
 rejected experiment cannot lower the saved best, so an ambitious change risks
 nothing that a cautious one protects. That is teaching the agent the rules of the
 game, not the answer -- which experiment to run remains entirely its own choice.
+
+
+### D21 - Convergence switched to the combined reading (team decision, 30 Aug)
+
+`convergence.comparison` changed from `per_iteration` to `block`, superseding the
+default set in D1.
+
+| Reading | Fires when |
+|---|---|
+| `per_iteration` (was default) | each of the last 3 gained <= 0.002 |
+| `block` (now in force) | best(last 3) - best(before those 3) <= 0.002 |
+
+**Decided by the team**, not ruled by the organisers. That distinction matters and is
+recorded rather than smoothed over: D1 chose the stricter reading precisely because
+it cannot over-run, and this reverses that on a judgement about intent.
+
+**What it changes.** `block` fires later, so runs go longer. On three consecutive
+gains of 0.0015, `per_iteration` stops and `block` continues, because together they
+are 0.0045. Verified after the switch: that sequence now reports 3 strikes and
+`converged=False`.
+
+**Why it matters now.** The deterministic control converged after four iterations,
+having spent 4 of 50 iterations and 6 of 360 minutes. Under the strict reading a run
+that makes small steady progress dies almost immediately. The combined reading gives
+the agent materially more experiments, which is the scarce resource.
+
+**The risk.** If the organisers meant the strict reading, we will have run past
+convergence. The hard caps at 50 iterations and 6 hours still bind, so the exposure
+is bounded to "used more of the 50 than a strict reading allowed" rather than
+anything unbounded.
+
+**Note on what is already measured:** on the control run's real numbers both readings
+agreed (0.6025 - 0.6015 = 0.0010, under epsilon either way), so nothing already
+recorded changes.
+
+Still worth an organiser ruling. Both readings remain implemented and tested; it is a
+one-word revert.
+
+### Deadline fixed: 1 September, 02:00
+
+Set by the team, not confirmed by the organisers. All remaining planning is against
+this. Still in the question list for written confirmation, including timezone.

@@ -55,9 +55,11 @@ convergence:                        # RULE -- implement literally, no cleverness
   # improving by <= epsilon", both implemented in harness/convergence.py:
   #   per_iteration  every one of the last N gained <= epsilon  (STRICTER, default)
   #   block          best(last N) - best(before those N) <= epsilon
-  # per_iteration fires no later than block, which is the safe side of a rule we
-  # self-enforce. Flip this one word if the organisers rule otherwise.
-  comparison: per_iteration
+  # TEAM DECISION (30 Aug): reading (b), block. The organisers have not ruled;
+  # this is our judgement of what they meant, and it makes runs LONGER than the
+  # strict reading. Recorded with the risk stated in D21 and in
+  # docs/QUESTIONS_FOR_ORGANISERS.md. One word to revert.
+  comparison: block
   # Never stop voluntarily before convergence fires.
   # Never continue after it fires.
   # On the final strike, take the highest-expected-gain untried structural change.

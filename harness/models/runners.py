@@ -427,15 +427,73 @@ def blend(score_vectors: Sequence[np.ndarray], groups: np.ndarray,
     return stacked / total
 
 
+def _mean_rank_corr(score_vectors: Sequence[np.ndarray],
+                    groups: np.ndarray) -> float:
+    """Average within-user rank correlation between every pair of members.
+
+    1.0 means the members rank every user's list identically and blending them
+    is arithmetic with no effect. Lower means they disagree, which is the raw
+    material a blend converts into a gain.
+    """
+    if len(score_vectors) < 2:
+        return 1.0
+    ranked = [rank_normalise(np.asarray(s, dtype=np.float64), groups)
+              for s in score_vectors]
+    total, pairs = 0.0, 0
+    for i in range(len(ranked)):
+        for j in range(i + 1, len(ranked)):
+            a, b = ranked[i], ranked[j]
+            sa, sb = a.std(), b.std()
+            if sa > 0 and sb > 0:
+                total += float(np.mean((a - a.mean()) * (b - b.mean())) / (sa * sb))
+                pairs += 1
+    return total / pairs if pairs else 1.0
+
+
+def _member_configs(seeds: Sequence[Any], base: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Turn the ``ensemble`` field into one full config per member.
+
+    Three shapes are accepted, because the useful ones were discovered in that
+    order:
+
+      [0, 1, 2]                       seeds of one model. Members differ only by
+                                      initialisation, so they disagree a little.
+      [{"seed": 0, "k": 8}, ...]      **different models.** Members can differ in
+                                      any train_fm argument, so they disagree a
+                                      lot more.
+      3                               shorthand for range(3)
+
+    The distinction matters. A blend gains from its members *disagreeing*: the
+    measured ablation put seed-diversity alone at +0.0002 and the same blending
+    at a smaller batch at +0.0016, because the smaller batch made the members
+    land further apart. Configuration diversity is the direct version of that.
+    """
+    if isinstance(seeds, int):
+        seeds = list(range(seeds))
+    out: List[Dict[str, Any]] = []
+    for i, member in enumerate(seeds):
+        if isinstance(member, dict):
+            config = {**base, **member}
+            config.setdefault('seed', i)
+        else:
+            config = {**base, 'seed': int(member)}
+        out.append(config)
+    return out
+
+
 def train_ensemble(splits: Dict[str, list] | None = None,
                    *,
-                   seeds: Sequence[int] = (0, 1, 2),
+                   seeds: Sequence[Any] = (0, 1, 2),
                    normalise: str = 'within_user_rank',
                    weights: Sequence[float] | None = None,
                    checkpoint_path: str | Path | None = None,
                    with_diagnostics: bool = True,
                    **train_kwargs: Any) -> TrainResult:
-    """Train one model per seed and blend their validation scores.
+    """Train several models and blend their validation scores into one ranking.
+
+    ``seeds`` may be a count, a list of seeds, or a list of **per-member config
+    dicts** — see ``_member_configs``. The last form is what allows members to be
+    genuinely different models rather than restarts of one.
 
     Selection is still on validation primary, and still on the blend as a whole:
     the members are not individually selected, so this is one experiment rather
@@ -470,11 +528,13 @@ def train_ensemble(splits: Dict[str, list] | None = None,
     # Members are checkpointed to a scratch directory so their weights survive
     # long enough to be blended and saved together. Only the ensemble checkpoint
     # is kept; the members are an implementation detail of one experiment.
+    configs = _member_configs(seeds, train_kwargs)
+
     with tempfile.TemporaryDirectory() as scratch:
-        for seed in seeds:
-            member_path = Path(scratch) / f'member_{seed}.npz'
-            member = train_fm(splits, seed=seed, with_diagnostics=False,
-                              checkpoint_path=member_path, **train_kwargs)
+        for i, config in enumerate(configs):
+            member_path = Path(scratch) / f'member_{i}.npz'
+            member = train_fm(splits, with_diagnostics=False,
+                              checkpoint_path=member_path, **config)
             members.append(member)
             model = load_checkpoint_state(member)
             states.append(model)
@@ -501,12 +561,24 @@ def train_ensemble(splits: Dict[str, list] | None = None,
                     'best_epoch': max(m.best_epoch for m in members)},
             'fields': field_contributions(states[0], enc['train'][0]),
             'ensemble': {
-                'seeds': list(seeds), 'normalise': normalise,
                 'members': [round(p, 6) for p in member_primaries],
+                'configs': [{k: v for k, v in c.items()
+                             if k in ('seed', 'k', 'lr', 'l2', 'batch',
+                                      'group_by', 'loss', 'patience')}
+                            for c in configs],
+                'normalise': normalise,
                 'best_member': round(max(member_primaries), 6),
                 'mean_member': round(float(np.mean(member_primaries)), 6),
                 'blend_over_best_member': round(
                     float(final['primary']) - max(member_primaries), 6),
+                # How much the members actually disagree. A blend can only gain
+                # from disagreement, so this is the number that predicts whether
+                # adding a member will help: near zero means the members are
+                # copies of each other and averaging them changes nothing.
+                'member_spread': round(
+                    float(max(member_primaries) - min(member_primaries)), 6),
+                'mean_pairwise_rank_corr': round(_mean_rank_corr(
+                    member_scores, groups_va), 4),
             },
             'cost': {'seconds': round(seconds, 1),
                      'reference_fm_seconds': REFERENCE_FM_SECONDS,
@@ -534,7 +606,7 @@ def train_ensemble(splits: Dict[str, list] | None = None,
                        val_ndcg5=float(final['nDCG@5']),
                        val_primary=float(final['primary']),
                        diagnostics=diagnostics, checkpoint=saved,
-                       seconds=seconds, seed=int(seeds[0]),
+                       seconds=seconds, seed=int(configs[0].get('seed', 0)),
                        epochs_run=max(m.epochs_run for m in members),
                        best_epoch=max(m.best_epoch for m in members),
                        epoch_history=[])

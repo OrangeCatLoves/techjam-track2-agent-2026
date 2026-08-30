@@ -514,3 +514,53 @@ def test_a_single_model_checkpoint_still_loads(splits, tmp_path):
     restored = R.load_checkpoint(path, dim=0)
     assert not isinstance(restored, R.EnsemblePredictor)
     assert R.score_split(restored, splits, 'valid').shape[0] == len(splits['valid'])
+
+
+# --------------------------------------------------------------------------
+# heterogeneous blends: members can be whole models, not just seeds
+# --------------------------------------------------------------------------
+
+def test_member_configs_accepts_all_three_shapes():
+    base = {'batch': 2048}
+    assert R._member_configs(2, base) == [{'batch': 2048, 'seed': 0},
+                                          {'batch': 2048, 'seed': 1}]
+    assert R._member_configs([11, 23], base) == [{'batch': 2048, 'seed': 11},
+                                                 {'batch': 2048, 'seed': 23}]
+    mixed = R._member_configs([{'seed': 11, 'k': 8}, {'seed': 23, 'k': 32}], base)
+    assert mixed == [{'batch': 2048, 'seed': 11, 'k': 8},
+                     {'batch': 2048, 'seed': 23, 'k': 32}]
+
+
+def test_a_member_config_overrides_the_shared_base():
+    configs = R._member_configs([{'batch': 512}], {'batch': 8192, 'k': 16})
+    assert configs[0]['batch'] == 512
+    assert configs[0]['k'] == 16, 'unset keys still come from the base'
+
+
+def test_disagreement_metric_reads_correctly():
+    """The number that predicts whether adding a member can help at all.
+
+    Members that rank every list identically cannot be blended into anything
+    new; averaging them is arithmetic with no effect.
+    """
+    groups = np.array([0, 0, 0, 1, 1, 1])
+    scores = np.array([3.0, 2.0, 1.0, 3.0, 2.0, 1.0])
+    assert R._mean_rank_corr([scores, scores.copy()], groups) == pytest.approx(1.0)
+    assert R._mean_rank_corr([scores, -scores], groups) == pytest.approx(-1.0)
+    assert R._mean_rank_corr([scores], groups) == 1.0
+
+
+@pytest.mark.slow
+def test_a_heterogeneous_blend_trains_and_reports_its_members(splits, tmp_path):
+    """Regression: `seed=int(seeds[0])` assumed a member was a number, so the
+    first heterogeneous blend crashed after training every member."""
+    result = R.train_ensemble(
+        splits, max_epochs=2, patience=1, checkpoint_path=tmp_path / 'het.npz',
+        seeds=[{'seed': 11, 'k': 8}, {'seed': 23, 'k': 16}])
+    ensemble = result.diagnostics['ensemble']
+    assert len(ensemble['members']) == 2
+    assert ensemble['configs'][0]['k'] == 8
+    assert ensemble['configs'][1]['k'] == 16
+    assert -1.0 <= ensemble['mean_pairwise_rank_corr'] <= 1.0
+    assert ensemble['member_spread'] >= 0.0
+    assert Path(result.checkpoint).exists()

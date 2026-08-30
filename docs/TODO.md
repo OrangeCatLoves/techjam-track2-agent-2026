@@ -170,6 +170,50 @@ Include a short line on tooling: the harness was written with Claude Code; the
 experiments were designed and coded by the agent itself. The distinction is the
 substance of the submission and reads as rigour, not as a caveat.
 
+### B5. Optional — run the agent yourself
+
+You can. Two things to get right first.
+
+**You need your own LLM access.** The agent runs on a *Claude Code subscription*, not
+an API key. Install Claude Code, log in, and leave `ANTHROPIC_API_KEY` unset — see
+`HANDOVER.md` §2.4. Each run costs roughly 25–45 minutes and ~240k tokens against
+your own subscription usage.
+
+**Name your run directory `runs/<yourname>-1/`, inside `runs/`.**
+
+```python
+from agent.loop import AgentLoop
+print(AgentLoop(run_dir='runs/alice-1').run(max_iterations=12))
+```
+
+Two people writing to *different* directories under `runs/` cannot conflict on merge,
+so this needs no coordination beyond picking distinct names.
+
+*(A sibling directory like `runs-alice/` used to slip past the ignore rules and would
+have committed 2.4 MB checkpoints and 4.4 MB submissions. The rules are now
+name-agnostic so either shape is safe, but `runs/<name>-<n>/` keeps everything in one
+place.)*
+
+**Your result replaces run 4 only if it clears both bars** (`RESULTS.md` §8):
+
+1. confirmed across several independent seed sets, not one measurement
+2. better than 0.6036 by **more than 0.002** — i.e. 0.6056 or above
+
+If it does, force-add the submission, because the ignore rules deliberately exclude
+them:
+
+```bash
+git add -f runs/<yourname>-N/submission.csv
+```
+
+Then update `RESULTS.md` §1 and §8 to name your run instead.
+
+**Worth knowing before you spend hours on it.** Four runs and roughly twenty
+experiments produced one improvement of +0.0021. The agent has no memory across runs,
+so yours will very likely open with pairwise BPR and rediscover that it fails — that
+is expected, not a fault. The one genuinely untried lever is duration-conditioned
+recalibration (A3).
+
 ---
 
 ## Shared — either owner

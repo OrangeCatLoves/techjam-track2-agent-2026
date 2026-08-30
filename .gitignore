@@ -19,8 +19,15 @@ workspace/
 *.joblib
 *.txt.bak
 
-runs/*/best/
-runs/*/checkpoints/
+# Run bulk, matched whatever a run directory is called. The original patterns
+# assumed runs/<id>/..., so a sibling directory like runs-alice/ slipped past them
+# and would have committed 2.4 MB checkpoints and 4.4 MB submissions. These are
+# deliberately name-agnostic: several people generating runs should not each have
+# to remember the convention.
+**/checkpoints/
+**/submission.csv
+runs*/**/best/
+runs*/*/best/
 
 .DS_Store
 Thumbs.db
@@ -43,7 +50,6 @@ harness/features/gen/*.py
 # Intermediate submissions: 4.4 MB each and regenerable in minutes. The ONE
 # submission that is actually submitted is added explicitly with `git add -f`,
 # so there is never ambiguity about which file was scored.
-runs/*/submission.csv
 
 # Local screenshots and scratch images
 image.png

@@ -44,3 +44,7 @@ harness/features/gen/*.py
 # submission that is actually submitted is added explicitly with `git add -f`,
 # so there is never ambiguity about which file was scored.
 runs/*/submission.csv
+
+# Local screenshots and scratch images
+image.png
+*.screenshot.png

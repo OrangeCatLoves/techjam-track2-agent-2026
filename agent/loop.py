@@ -83,6 +83,7 @@ class AgentLoop:
         self.proposer = agent_propose.Proposer(self.client)
         self._last_result: Any = None
         self._last_metrics: Dict[str, float] = {}
+        self._analyses: List[Any] | None = None
         self._deterministic_index = 0
 
     # -- the run -----------------------------------------------------------
@@ -167,7 +168,8 @@ class AgentLoop:
             return proposal, None
         try:
             diagnosis = self._diagnose(iteration)
-            return self.proposer.propose(diagnosis.to_prompt(), tried=tried), None
+            return self.proposer.propose(diagnosis.to_prompt(), tried=tried,
+                                         analyses=self._standing_analyses()), None
         except (agent_propose.ProposalError, agent_llm.LLMError,
                 agent_llm.LLMUnavailable) as exc:
             self.logger.log_event(
@@ -183,6 +185,7 @@ class AgentLoop:
                 return None, f'{exc} / fallback: {inner}'
 
     def _diagnose(self, iteration: int) -> agent_diagnose.Diagnosis:
+        records = self.ledger.records()
         return agent_diagnose.diagnose(
             self._last_result or hexperiment.ExperimentResult(ok=False,
                                                               error_kind=None),
@@ -191,8 +194,39 @@ class AgentLoop:
                           if self.ledger.best() else None),
             previous=self._last_metrics,
             convergence=self.tracker.status(),
-            tried=[r.get('patch_kind', '?') for r in self.ledger.records()
-                   if r.get('patch_kind')])
+            tried=[r.get('patch_kind', '?') for r in records
+                   if r.get('patch_kind')],
+            # Stages of experiments that were NOT kept, so the diagnosis can tell
+            # the agent when it is repeating a direction that has produced nothing.
+            stages=[r.get('target_stage') for r in records
+                    if r.get('target_stage')
+                    and r.get('decision') != hledger.DECISION_KEEP])
+
+    def _standing_analyses(self) -> List[Any]:
+        """Measurements put in front of the agent every iteration.
+
+        The agent used these well when they were offered in a one-shot call and
+        flew blind without them in the loop, which was a harness gap rather than
+        an agent failure: `build_prompt` always accepted analyses and the loop
+        never passed any.
+
+        These are primitives, not conclusions. They describe the shape of the data
+        and say nothing about what to do with it.
+        """
+        if self._analyses is None:
+            try:
+                splits = self.splits if self.splits is not None else hdata.load()
+                self._analyses = [
+                    hanalyse.analyse('list_size_profile', 'train', splits=splits),
+                    hanalyse.analyse('user_composition', 'valid', splits=splits),
+                    hanalyse.analyse('cold_key_rate', 'valid', splits=splits),
+                ]
+            except Exception as exc:
+                self.logger.log_event(
+                    hlogger.EVENT_RECOVERY,
+                    f'standing analyses unavailable: {type(exc).__name__}')
+                self._analyses = []
+        return self._analyses
 
     def _attempt_repair(self, iteration: int, proposal, result):
         """One attempt, on the cheap model. Hard failures never reach here."""

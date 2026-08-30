@@ -32,6 +32,16 @@ from harness import guards
 #: so anything under this is inside the machine's own jitter.
 NOISE_FLOOR = 0.001
 
+#: Consecutive experiments on one target_stage, none kept, before the diagnosis
+#: tells the agent to move on. Three is one more than CLAUDE.md 6.3 allows for
+#: abandons, because a rejection carries a score and so is weaker evidence than a
+#: crash that the direction is dead.
+STAGE_REPEAT_LIMIT = 3
+
+#: Mirrors agent.propose.TARGET_STAGES. Duplicated rather than imported to keep
+#: diagnose free of a dependency on the proposer.
+TARGET_STAGES = ('objective', 'model', 'features', 'sampling', 'ensemble')
+
 
 @dataclass
 class Diagnosis:
@@ -84,6 +94,7 @@ def _delta_phrase(name: str, current: float, previous: float | None) -> str:
 def diagnose(result: Any, *, iteration: int, best_primary: float | None,
              previous: Dict[str, float] | None = None,
              convergence: Any = None, tried: List[str] | None = None,
+             stages: List[str] | None = None,
              proposal: Dict[str, Any] | None = None) -> Diagnosis:
     """Turn one experiment result into facts.
 
@@ -182,6 +193,24 @@ def diagnose(result: Any, *, iteration: int, best_primary: float | None,
                 'hyperparameters converged after four iterations. A rejected '
                 'experiment cannot lower the saved best, so an ambitious change '
                 'risks nothing that a cautious one protects.')
+
+    # Stage diversity. A measured run spent all six of its iterations on
+    # `objective`, concluding by its own account that "the loss family is not the
+    # bottleneck" -- and then proposed another loss. CLAUDE.md 6.3 already forces
+    # a different stage after two consecutive abandons; a rejection is the same
+    # signal with a score attached, so it counts here too.
+    #
+    # This names the stages NOT to repeat. It does not say what to try in their
+    # place, which stays the agent's choice.
+    recent = [s for s in (stages or []) if s][-STAGE_REPEAT_LIMIT:]
+    if len(recent) >= STAGE_REPEAT_LIMIT and len(set(recent)) == 1:
+        exhausted = recent[0]
+        alternatives = [s for s in TARGET_STAGES if s != exhausted]
+        warnings.append(
+            f'The last {len(recent)} experiments all targeted `{exhausted}` and '
+            f'none was kept. Propose a different target_stage this iteration: '
+            f'{alternatives}. Repeating a stage that has produced nothing '
+            f'{len(recent)} times running spends the run on one hypothesis.')
 
     diagnosis = Diagnosis(iteration=iteration, outcome=outcome, facts=facts,
                           metrics=metrics, run_state=run_state,

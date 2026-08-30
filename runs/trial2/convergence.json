@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "run_id": "8120689b17ce",
+  "rule": {
+    "epsilon": 0.002,
+    "n_consecutive": 3,
+    "max_iterations": 50,
+    "max_wall_clock_hours": 6.0,
+    "comparison": "block",
+    "allow_early_stop": false
+  },
+  "iteration": 5,
+  "failed_iterations": 0,
+  "strikes": 3,
+  "best_primary": 0.6020388494156208,
+  "best_iteration": 3,
+  "best_ref": "runs\\swetha-2\\checkpoints\\iter_003.npz",
+  "elapsed_seconds": 838.0402080999945,
+  "converged": true,
+  "converged_reason": "no_improvement",
+  "converged_at_iteration": 5,
+  "history": [
+    {
+      "iteration": 1,
+      "status": "ok",
+      "primary": 0.5800732391821007,
+      "best_before": null,
+      "gain": null,
+      "strike": false,
+      "content_hash": "16546ec384486cd8",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 2,
+      "status": "ok",
+      "primary": 0.6019160584844074,
+      "best_before": 0.5800732391821007,
+      "gain": 0.021842819302306693,
+      "strike": false,
+      "content_hash": "9871463753fcf87a",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 3,
+      "status": "ok",
+      "primary": 0.6020388494156208,
+      "best_before": 0.6019160584844074,
+      "gain": 0.00012279093121336793,
+      "strike": true,
+      "content_hash": "d0811ea8dbfa2a20",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 4,
+      "status": "ok",
+      "primary": 0.6020388494156208,
+      "best_before": 0.6020388494156208,
+      "gain": 0.0,
+      "strike": true,
+      "content_hash": "5afeb6a0cef3d4d8",
+      "meta": {}
+    },
+    {
+      "iteration": 5,
+      "status": "ok",
+      "primary": 0.6019910272142457,
+      "best_before": 0.6020388494156208,
+      "gain": -4.782220137511395e-05,
+      "strike": true,
+      "content_hash": "338e35e12f8c8b1e",
+      "meta": {}
+    }
+  ],
+  "tried": [
+    "16546ec384486cd8",
+    "9871463753fcf87a",
+    "d0811ea8dbfa2a20",
+    "5afeb6a0cef3d4d8",
+    "338e35e12f8c8b1e"
+  ]
+}

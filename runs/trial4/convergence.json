@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "run_id": "d48b07ca1523",
+  "rule": {
+    "epsilon": 0.002,
+    "n_consecutive": 3,
+    "max_iterations": 50,
+    "max_wall_clock_hours": 6.0,
+    "comparison": "block",
+    "allow_early_stop": false
+  },
+  "iteration": 5,
+  "failed_iterations": 0,
+  "strikes": 1,
+  "best_primary": 0.6008368498100527,
+  "best_iteration": 4,
+  "best_ref": "runs\\swetha-4\\checkpoints\\iter_004.npz",
+  "elapsed_seconds": 1488.2394059000003,
+  "converged": false,
+  "converged_reason": null,
+  "converged_at_iteration": null,
+  "history": [
+    {
+      "iteration": 1,
+      "status": "ok",
+      "primary": 0.594057363619805,
+      "best_before": null,
+      "gain": null,
+      "strike": false,
+      "content_hash": "69e1dba90704aa8d",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 2,
+      "status": "ok",
+      "primary": 0.5978736138384344,
+      "best_before": 0.594057363619805,
+      "gain": 0.0038162502186294134,
+      "strike": false,
+      "content_hash": "7284e7177d89bdde",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 3,
+      "status": "ok",
+      "primary": 0.594697489871465,
+      "best_before": 0.5978736138384344,
+      "gain": -0.003176123966969424,
+      "strike": true,
+      "content_hash": "54c8b29f474b0278",
+      "meta": {}
+    },
+    {
+      "iteration": 4,
+      "status": "ok",
+      "primary": 0.6008368498100527,
+      "best_before": 0.5978736138384344,
+      "gain": 0.0029632359716182943,
+      "strike": false,
+      "content_hash": "80ab05c836ec748e",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 5,
+      "status": "ok",
+      "primary": 0.5953931356991637,
+      "best_before": 0.6008368498100527,
+      "gain": -0.005443714110888953,
+      "strike": true,
+      "content_hash": "cb6c3cc049fdc749",
+      "meta": {}
+    }
+  ],
+  "tried": [
+    "69e1dba90704aa8d",
+    "7284e7177d89bdde",
+    "54c8b29f474b0278",
+    "80ab05c836ec748e",
+    "cb6c3cc049fdc749"
+  ]
+}

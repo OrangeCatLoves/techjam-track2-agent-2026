@@ -121,22 +121,78 @@ SYSTEM = """You are an autonomous ML research agent working on a within-user ran
 task. You propose ONE experiment at a time, write the Python for it yourself, read
 the measured result, and decide what to try next.
 
+You are NOT in an interactive session. There are no tools, no files to edit, and no
+human reading your prose. Your entire output is parsed by a program. Do not describe
+what you would do, do not apologise for missing tools, and do not write a report.
+
+OUTPUT: exactly one JSON object. No prose before it, no prose after it, no markdown
+fence. The `patch` field carries your Python source as a JSON string.
+
 Rules you cannot break:
 - Every number you are given was measured by the harness. Never invent one, and
   never restate one you were not given.
-- You may only write to harness/models/gen/. You may import numpy, pandas, scipy,
-  sklearn, lightgbm, math, itertools, collections, and harness.losses. Nothing else.
-- Your patch must define CONFIG, a dict of keyword arguments for train_fm.
-- If you register an objective, declare its kind honestly: pointwise, pairwise or
-  listwise. A pairwise or listwise objective MUST build its pairs or lists within a
-  group; the harness checks this by permuting the grouping and will reject a loss
-  that ignores it.
+- Your patch is ONE Python module written to harness/models/gen/. It must define
+  CONFIG. It must not define main(), argparse, __main__, or its own training loop:
+  the harness runs the training. You supply the objective and the configuration.
+- You may import numpy, pandas, scipy, sklearn, lightgbm, math, itertools,
+  collections, and harness.losses. Nothing else. No os, no sys, no file access.
+- A pairwise or listwise objective MUST build its pairs or lists WITHIN a group.
+  The harness verifies this by permuting the grouping and requiring the loss to
+  change; a loss that ignores `groups` is rejected.
 - Never repeat an experiment already in the tried list.
 
-Reply with a single JSON object and nothing else:
-{"hypothesis": "...", "target_stage": "objective|model|features|sampling|ensemble",
- "patch_kind": "...", "expected_gain": 0.0, "expected_cost_minutes": 0.0,
- "patch": "...python source..."}"""
+Keep the hypothesis under 120 words. Reasoning that does not fit in the hypothesis
+field is lost, so put it there rather than outside the JSON."""
+
+
+#: A complete, valid patch, shown because the first real call invented its own
+#: argparse runner: the contract was stated but never demonstrated, so the model
+#: guessed an interface and the proposal was unusable.
+#:
+#: DELIBERATELY A WEAK IDEA. It is a per-list-normalised *pointwise* loss, which
+#: is not a ranking objective at all. It demonstrates the mechanics -- how to
+#: register, how to walk groups, what to return, what CONFIG looks like -- and
+#: nothing about what to try. An example that showed a pairwise or listwise
+#: objective would hand the agent the two ideas the whole exercise is asking it to
+#: find, and Innovation is 20% of the grade.
+PATCH_EXAMPLE = '''import numpy as np
+from harness.losses import register_loss, sigmoid
+
+@register_loss("per_list_weighted_logloss_v1", kind="pointwise")
+def per_list_weighted_logloss(z, y, groups):
+    """Pointwise logloss, weighted so every list contributes equally.
+
+    Mechanics only: this is still a pointwise objective and is not expected to
+    help. It shows how to register, how to use `groups`, and what to return.
+    """
+    p = 1.0 / (1.0 + np.exp(-np.clip(z, -30, 30)))
+    weight = np.ones_like(z, dtype=np.float64)
+    for g in np.unique(groups):
+        m = groups == g
+        weight[m] = 1.0 / max(1, m.sum())
+    weight /= weight.sum()
+    loss = float(-(weight * (y * np.log(p + 1e-9)
+                             + (1 - y) * np.log(1 - p + 1e-9))).sum())
+    return loss, (weight * (p - y)).astype(np.float32)
+
+CONFIG = {"loss": "per_list_weighted_logloss_v1", "group_by": "user_id"}
+'''
+
+#: What CONFIG may contain. Stated because the model cannot see train_fm.
+CONFIG_KEYS = """CONFIG is a dict of keyword arguments for the harness trainer.
+Every key is optional; an empty CONFIG trains the reference baseline.
+
+  loss      str   the name you registered, or omit for "pointwise_logloss"
+  group_by  str   "user_id" or "user_id+date"   -- defines the lists in `groups`
+  k         int   embedding dimension           (default 16)
+  lr        float learning rate                 (default 0.001)
+  l2        float L2 penalty                    (default 1e-6)
+  batch     int   batch size                    (default 8192)
+  max_epochs int  epoch cap                     (default 40)
+  patience  int   early-stop patience on validation primary (default 4)
+
+The trainer handles batching, early stopping on validation primary, restoring the
+best epoch, and scoring. You do not write any of that."""
 
 
 def build_prompt(diagnosis_text: str, *, corpus: str, capabilities: Dict[str, Any],
@@ -168,9 +224,27 @@ def build_prompt(diagnosis_text: str, *, corpus: str, capabilities: Dict[str, An
                  'Retrieved from the method corpus. This is background, not a queue '
                  'to work through, and every estimate in it should be checked with '
                  'the tools above before it is trusted.', '', corpus, '',
+                 '# How a patch is written', '', CONFIG_KEYS, '',
+                 'A complete, valid patch looks exactly like this:', '',
+                 '```python', PATCH_EXAMPLE, '```', '',
+                 'Yours will differ in substance. It must not differ in shape: one '
+                 'module, no main(), no argparse, no training loop, ending in '
+                 'CONFIG.', '',
                  '# Your task', '',
                  'Propose ONE experiment. State what you believe is wrong and why '
-                 'this change should move the metric. Write the code.']
+                 'this change should move the metric.', '',
+                 '# Output format -- read this last', '',
+                 'Return exactly one JSON object and nothing else. No preamble, no '
+                 'markdown fence, no commentary after it. The `patch` field holds '
+                 'your Python source as a JSON string, with newlines escaped.', '',
+                 '{"hypothesis": "<your reasoning, under 120 words>",',
+                 ' "target_stage": "objective|model|features|sampling|ensemble",',
+                 ' "patch_kind": "<short label>",',
+                 ' "expected_gain": <float>,',
+                 ' "expected_cost_minutes": <float>,',
+                 ' "patch": "<python source>"}', '',
+                 'A response that is not a single JSON object is discarded and the '
+                 'iteration is wasted.']
 
     prompt = '\n'.join(sections)
     guards.assert_no_test_metrics(prompt, where='proposer prompt')

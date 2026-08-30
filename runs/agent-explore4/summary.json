@@ -1,0 +1,62 @@
+{
+  "run_id": "agent-explore4",
+  "converged": true,
+  "reason": "no_improvement",
+  "iterations": 7,
+  "best_val_primary": 0.6033534913169378,
+  "ledger": {
+    "run_id": "agent-explore4",
+    "run_dir": "runs\\agent-explore4",
+    "records": 7,
+    "kept": 3,
+    "rejected": 4,
+    "failed": 0,
+    "best_iteration": 4,
+    "best_val_primary": 0.6033534913169378,
+    "best_flagged_for_review": false,
+    "canary_trips": 0,
+    "review_flags": 0
+  },
+  "submission": {
+    "written": false,
+    "reason": "KeyError: 'V is not a file in the archive'"
+  },
+  "usage": {
+    "input": 188312,
+    "output": 49053,
+    "total": 237365,
+    "limit": 2000000,
+    "remaining": 1762635,
+    "calls": 7,
+    "failed_calls": 0,
+    "estimated_calls": 0,
+    "by_model": {
+      "claude-opus-5": 237365
+    },
+    "provider": "claude_cli",
+    "models": {
+      "fast": "claude-haiku-4-5-20251001",
+      "strong": "claude-opus-5"
+    },
+    "note": "0 of 7 call(s) had their token count estimated from prompt length because the request failed before reporting usage. Estimates can only overstate."
+  },
+  "resources": {
+    "run_id": "agent-explore4",
+    "iterations_used": 7,
+    "iterations_cap": 50,
+    "wall_clock_hours": 0.738,
+    "tokens": {
+      "input": 751806,
+      "output": 202621,
+      "total": 954427
+    },
+    "gpu_hours": 0.0,
+    "manual_interventions": 0,
+    "operational_restarts": 0,
+    "recovery_events": 1,
+    "canary_trips": 0,
+    "review_flags": 0,
+    "intervention_definition": "a human changing the agent instructions, objective or search space. Restarting a crashed process is operational recovery and is counted separately."
+  },
+  "review_required": []
+}

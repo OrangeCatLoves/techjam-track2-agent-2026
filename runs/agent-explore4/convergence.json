@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "run_id": "c30ece039b24",
+  "rule": {
+    "epsilon": 0.002,
+    "n_consecutive": 3,
+    "max_iterations": 50,
+    "max_wall_clock_hours": 6.0,
+    "comparison": "block",
+    "allow_early_stop": false
+  },
+  "iteration": 7,
+  "failed_iterations": 0,
+  "strikes": 3,
+  "best_primary": 0.6033534913169378,
+  "best_iteration": 4,
+  "best_ref": "runs\\agent-explore4\\checkpoints\\iter_004.npz",
+  "elapsed_seconds": 2656.9557362999767,
+  "converged": true,
+  "converged_reason": "no_improvement",
+  "converged_at_iteration": 7,
+  "history": [
+    {
+      "iteration": 1,
+      "status": "ok",
+      "primary": 0.588803906951511,
+      "best_before": null,
+      "gain": null,
+      "strike": false,
+      "content_hash": "c8718cf0f3f9e07d",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 2,
+      "status": "ok",
+      "primary": 0.600411165550152,
+      "best_before": 0.588803906951511,
+      "gain": 0.01160725859864098,
+      "strike": false,
+      "content_hash": "f5149590ffda276f",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 3,
+      "status": "ok",
+      "primary": 0.5944099063132027,
+      "best_before": 0.600411165550152,
+      "gain": -0.0060012592369492745,
+      "strike": true,
+      "content_hash": "e4487317b1178eba",
+      "meta": {}
+    },
+    {
+      "iteration": 4,
+      "status": "ok",
+      "primary": 0.6033534913169378,
+      "best_before": 0.600411165550152,
+      "gain": 0.0029423257667858804,
+      "strike": false,
+      "content_hash": "199116ae14964a89",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 5,
+      "status": "ok",
+      "primary": 0.6010044259751961,
+      "best_before": 0.6033534913169378,
+      "gain": -0.0023490653417417295,
+      "strike": true,
+      "content_hash": "073e415f8bdf5efc",
+      "meta": {}
+    },
+    {
+      "iteration": 6,
+      "status": "ok",
+      "primary": 0.5997925112921558,
+      "best_before": 0.6033534913169378,
+      "gain": -0.003560980024782001,
+      "strike": true,
+      "content_hash": "31eb4bbd0526cde0",
+      "meta": {}
+    },
+    {
+      "iteration": 7,
+      "status": "ok",
+      "primary": 0.6012830469904891,
+      "best_before": 0.6033534913169378,
+      "gain": -0.0020704443264487615,
+      "strike": true,
+      "content_hash": "40055b9be135da93",
+      "meta": {}
+    }
+  ],
+  "tried": [
+    "c8718cf0f3f9e07d",
+    "f5149590ffda276f",
+    "e4487317b1178eba",
+    "199116ae14964a89",
+    "073e415f8bdf5efc",
+    "31eb4bbd0526cde0",
+    "40055b9be135da93"
+  ]
+}

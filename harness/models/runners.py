@@ -558,10 +558,60 @@ def save_checkpoint(model, path: str | Path) -> Path:
     return path
 
 
+class EnsemblePredictor:
+    """A blended model, restored from an ensemble checkpoint.
+
+    Scoring needs the group ids as well as the features, because the members are
+    combined by within-user rank rather than by raw score. That is the whole
+    reason the blend is not a no-op, so it cannot be dropped for convenience.
+    """
+
+    def __init__(self, members: List[Any], weights: Sequence[float],
+                 normalise: str):
+        self.members = members
+        self.weights = list(weights)
+        self.normalise = normalise
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """Raw mean of member logits. Only for callers with no groups.
+
+        This is NOT the ranking the ensemble was scored on. `predict_blended` is.
+        """
+        return np.mean([m.predict(X) for m in self.members], axis=0)
+
+    def predict_blended(self, X: np.ndarray, groups: np.ndarray) -> np.ndarray:
+        """The ranking the ensemble was actually selected on."""
+        return blend([m.predict(X) for m in self.members], groups,
+                     weights=self.weights, normalise=self.normalise)
+
+
 def load_checkpoint(path: str | Path, dim: int, k: int = 16, **kwargs):
-    """Rebuild a model from a checkpoint, for rollback or for scoring a split."""
-    blob = np.load(Path(path))
-    model = PluggableFM(dim, k=k, **kwargs)
+    """Rebuild a model from a checkpoint, for rollback or for scoring a split.
+
+    Handles both shapes. An ensemble checkpoint holds ``V0/W0/b0 ... Vn/Wn/bn``
+    plus the blend recipe; a single model holds ``V/W/b``. Reading only the
+    single shape is how a winning ensemble came back as
+    ``KeyError: 'V is not a file in the archive'`` and could not be submitted at
+    all.
+    """
+    blob = np.load(Path(path), allow_pickle=False)
+    names = set(blob.files)
+
+    if 'ensemble' in names:
+        count = sum(1 for n in names if n.startswith('V') and n[1:].isdigit())
+        members = []
+        for i in range(count):
+            member = PluggableFM(blob[f'V{i}'].shape[0], k=blob[f'V{i}'].shape[1])
+            member.V, member.W = blob[f'V{i}'], blob[f'W{i}']
+            member.b = np.float32(blob[f'b{i}'])
+            members.append(member)
+        weights = (blob['weights'].tolist() if 'weights' in names
+                   else [1.0] * count)
+        normalise = (str(blob['normalise']) if 'normalise' in names
+                     else 'within_user_rank')
+        return EnsemblePredictor(members, weights, normalise)
+
+    model = PluggableFM(blob['V'].shape[0], k=blob['V'].shape[1], **kwargs)
     model.V, model.W, model.b = blob['V'], blob['W'], np.float32(blob['b'])
     return model
 
@@ -571,8 +621,14 @@ def score_split(model, splits: Dict[str, list], split: str,
     """Model scores for a split, in the split's own row order.
 
     Works on ``test``: producing a submission needs the features, never the label.
+
+    An ensemble is scored through its blend, with the group ids it needs. Using
+    the raw mean instead would submit a different ranking from the one that was
+    selected on validation.
     """
     if enc is None:
         enc, _ = hdata.encode(splits)
     X = enc[split][0]
+    if isinstance(model, EnsemblePredictor):
+        return model.predict_blended(X, build_groups(splits, split, 'user_id'))
     return model.predict(X)

@@ -471,3 +471,46 @@ def test_an_ensemble_config_shaped_like_the_child_sends_it(splits, tmp_path):
 def test_an_empty_ensemble_is_rejected():
     with pytest.raises(ValueError):
         R.train_ensemble(seeds=())
+
+
+@pytest.mark.slow
+def test_an_ensemble_checkpoint_round_trips_into_a_submission(splits, tmp_path):
+    """Regression: the agent's best result could not be submitted at all.
+
+    An ensemble checkpoint holds V0/W0/b0 ... Vn/Wn/bn plus the blend recipe;
+    load_checkpoint read only the single-model V/W/b shape and failed with
+    "KeyError: 'V is not a file in the archive'". The winning experiment scored
+    0.6034 and the harness could not turn it into a submission, which is the one
+    thing the whole pipeline exists to produce.
+    """
+    from harness import evaluate as hevaluate
+
+    path = tmp_path / 'ens.npz'
+    trained = R.train_ensemble(splits, seeds=(0, 1), max_epochs=2, patience=1,
+                               checkpoint_path=path)
+
+    restored = R.load_checkpoint(path, dim=0)
+    assert isinstance(restored, R.EnsemblePredictor)
+    assert len(restored.members) == 2
+
+    # The submission must carry the ranking that was SELECTED, which for an
+    # ensemble is the blend, not the raw mean of member logits.
+    valid_scores = R.score_split(restored, splits, 'valid')
+    rescored = hevaluate.evaluate_split(splits, 'valid', valid_scores)
+    assert rescored['primary'] == pytest.approx(trained.val_primary, abs=1e-9)
+
+    # And it must work on test, which has no labels at all.
+    test_scores = R.score_split(restored, splits, 'test')
+    assert len(test_scores) == len(splits['test'])
+    assert np.all(np.isfinite(test_scores))
+
+
+@pytest.mark.slow
+def test_a_single_model_checkpoint_still_loads(splits, tmp_path):
+    """The ensemble branch must not break the shape everything else uses."""
+    path = tmp_path / 'single.npz'
+    R.train_fm(splits, seed=0, max_epochs=1, patience=1, checkpoint_path=path,
+               with_diagnostics=False)
+    restored = R.load_checkpoint(path, dim=0)
+    assert not isinstance(restored, R.EnsemblePredictor)
+    assert R.score_split(restored, splits, 'valid').shape[0] == len(splits['valid'])

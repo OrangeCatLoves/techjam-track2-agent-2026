@@ -9,16 +9,16 @@
     "comparison": "per_iteration",
     "allow_early_stop": false
   },
-  "iteration": 1,
+  "iteration": 4,
   "failed_iterations": 0,
-  "strikes": 0,
-  "best_primary": 0.601468756352959,
-  "best_iteration": 1,
-  "best_ref": "runs\\control-main\\checkpoints\\iter_001.npz",
-  "elapsed_seconds": 66.29070359980687,
-  "converged": false,
-  "converged_reason": null,
-  "converged_at_iteration": null,
+  "strikes": 3,
+  "best_primary": 0.6025029206269913,
+  "best_iteration": 4,
+  "best_ref": "runs\\control-main\\checkpoints\\iter_004.npz",
+  "elapsed_seconds": 353.64008069992997,
+  "converged": true,
+  "converged_reason": "no_improvement",
+  "converged_at_iteration": 4,
   "history": [
     {
       "iteration": 1,
@@ -30,9 +30,43 @@
       "content_hash": "d0811ea8dbfa2a20",
       "meta": {},
       "new_best": true
+    },
+    {
+      "iteration": 2,
+      "status": "ok",
+      "primary": 0.601468756352959,
+      "best_before": 0.601468756352959,
+      "gain": 0.0,
+      "strike": true,
+      "content_hash": "5afeb6a0cef3d4d8",
+      "meta": {}
+    },
+    {
+      "iteration": 3,
+      "status": "ok",
+      "primary": 0.6013939822682105,
+      "best_before": 0.601468756352959,
+      "gain": -7.477408474854119e-05,
+      "strike": true,
+      "content_hash": "338e35e12f8c8b1e",
+      "meta": {}
+    },
+    {
+      "iteration": 4,
+      "status": "ok",
+      "primary": 0.6025029206269913,
+      "best_before": 0.601468756352959,
+      "gain": 0.0010341642740322454,
+      "strike": true,
+      "content_hash": "6d416f27cf21c3c3",
+      "meta": {},
+      "new_best": true
     }
   ],
   "tried": [
-    "d0811ea8dbfa2a20"
+    "d0811ea8dbfa2a20",
+    "5afeb6a0cef3d4d8",
+    "338e35e12f8c8b1e",
+    "6d416f27cf21c3c3"
   ]
 }

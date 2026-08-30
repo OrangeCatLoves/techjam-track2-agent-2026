@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "run_id": "4d15663e9c95",
+  "rule": {
+    "epsilon": 0.002,
+    "n_consecutive": 3,
+    "max_iterations": 50,
+    "max_wall_clock_hours": 6.0,
+    "comparison": "per_iteration",
+    "allow_early_stop": false
+  },
+  "iteration": 0,
+  "failed_iterations": 0,
+  "strikes": 0,
+  "best_primary": null,
+  "best_iteration": null,
+  "best_ref": null,
+  "elapsed_seconds": 0.0,
+  "converged": false,
+  "converged_reason": null,
+  "converged_at_iteration": null,
+  "history": [],
+  "tried": []
+}

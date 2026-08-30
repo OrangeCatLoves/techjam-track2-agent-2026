@@ -33,3 +33,14 @@ Thumbs.db
 runs/raw_starter_output/
 runs/quarantine/
 runs/review/
+
+# Generated model code, live only while an experiment is running. The ledger
+# archives each patch to runs/<id>/patches/ when it finishes, and that copy is
+# the one worth keeping.
+harness/models/gen/*.py
+harness/features/gen/*.py
+
+# Intermediate submissions: 4.4 MB each and regenerable in minutes. The ONE
+# submission that is actually submitted is added explicitly with `git add -f`,
+# so there is never ambiguity about which file was scored.
+runs/*/submission.csv

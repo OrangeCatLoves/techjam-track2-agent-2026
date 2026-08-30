@@ -1,0 +1,64 @@
+{
+  "run_id": "control-main",
+  "converged": true,
+  "reason": "no_improvement",
+  "iterations": 4,
+  "best_val_primary": 0.6025029206269913,
+  "ledger": {
+    "run_id": "control-main",
+    "run_dir": "runs\\control-main",
+    "records": 4,
+    "kept": 2,
+    "rejected": 2,
+    "failed": 0,
+    "best_iteration": 4,
+    "best_val_primary": 0.6025029206269913,
+    "best_flagged_for_review": false,
+    "canary_trips": 0,
+    "review_flags": 0
+  },
+  "submission": {
+    "written": true,
+    "path": "runs\\control-main\\submission.csv",
+    "rows": 170588,
+    "from_iteration": 4,
+    "val_primary": 0.6025029206269913,
+    "flagged_for_review": false
+  },
+  "usage": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "limit": 300000,
+    "remaining": 300000,
+    "calls": 0,
+    "failed_calls": 0,
+    "estimated_calls": 0,
+    "by_model": {},
+    "provider": "none",
+    "models": {
+      "fast": "claude-haiku-4-5-20251001",
+      "strong": "claude-opus-5"
+    },
+    "note": "0 of 0 call(s) had their token count estimated from prompt length because the request failed before reporting usage. Estimates can only overstate."
+  },
+  "resources": {
+    "run_id": "control-main",
+    "iterations_used": 4,
+    "iterations_cap": 50,
+    "wall_clock_hours": 0.098,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "gpu_hours": 0.0,
+    "manual_interventions": 0,
+    "operational_restarts": 0,
+    "recovery_events": 0,
+    "canary_trips": 0,
+    "review_flags": 0,
+    "intervention_definition": "a human changing the agent instructions, objective or search space. Restarting a crashed process is operational recovery and is counted separately."
+  },
+  "review_required": []
+}

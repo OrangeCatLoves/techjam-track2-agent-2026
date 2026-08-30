@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "run_id": "377d39594564",
+  "rule": {
+    "epsilon": 0.002,
+    "n_consecutive": 3,
+    "max_iterations": 50,
+    "max_wall_clock_hours": 6.0,
+    "comparison": "per_iteration",
+    "allow_early_stop": false
+  },
+  "iteration": 6,
+  "failed_iterations": 1,
+  "strikes": 3,
+  "best_primary": 0.6015130475679629,
+  "best_iteration": 3,
+  "best_ref": "runs\\agent-explore\\checkpoints\\iter_003.npz",
+  "elapsed_seconds": 1549.174393299967,
+  "converged": true,
+  "converged_reason": "no_improvement",
+  "converged_at_iteration": 6,
+  "history": [
+    {
+      "iteration": 1,
+      "status": "failed",
+      "primary": null,
+      "best_before": null,
+      "gain": null,
+      "strike": false,
+      "content_hash": "628f038cab37d23d",
+      "meta": {
+        "error": "code"
+      }
+    },
+    {
+      "iteration": 2,
+      "status": "ok",
+      "primary": 0.5901743614671653,
+      "best_before": null,
+      "gain": null,
+      "strike": false,
+      "content_hash": "ec986387da64f0b8",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 3,
+      "status": "ok",
+      "primary": 0.6015130475679629,
+      "best_before": 0.5901743614671653,
+      "gain": 0.01133868610079758,
+      "strike": false,
+      "content_hash": "a3a7facdcdf46465",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 4,
+      "status": "ok",
+      "primary": 0.5950141011662533,
+      "best_before": 0.6015130475679629,
+      "gain": -0.00649894640170956,
+      "strike": true,
+      "content_hash": "6c4b93950a1b6cde",
+      "meta": {}
+    },
+    {
+      "iteration": 5,
+      "status": "ok",
+      "primary": 0.6013603761541775,
+      "best_before": 0.6015130475679629,
+      "gain": -0.00015267141378538795,
+      "strike": true,
+      "content_hash": "de4ae3ca9ed0a071",
+      "meta": {}
+    },
+    {
+      "iteration": 6,
+      "status": "ok",
+      "primary": 0.594842515207346,
+      "best_before": 0.6015130475679629,
+      "gain": -0.0066705323606168765,
+      "strike": true,
+      "content_hash": "3283654c09388eb8",
+      "meta": {}
+    }
+  ],
+  "tried": [
+    "628f038cab37d23d",
+    "ec986387da64f0b8",
+    "a3a7facdcdf46465",
+    "6c4b93950a1b6cde",
+    "de4ae3ca9ed0a071",
+    "3283654c09388eb8"
+  ]
+}

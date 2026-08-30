@@ -1,0 +1,66 @@
+{
+  "run_id": "agent-explore2",
+  "converged": true,
+  "reason": "no_improvement",
+  "iterations": 6,
+  "best_val_primary": 0.6010151715496408,
+  "ledger": {
+    "run_id": "agent-explore2",
+    "run_dir": "runs\\agent-explore2",
+    "records": 6,
+    "kept": 3,
+    "rejected": 3,
+    "failed": 0,
+    "best_iteration": 6,
+    "best_val_primary": 0.6010151715496408,
+    "best_flagged_for_review": false,
+    "canary_trips": 0,
+    "review_flags": 0
+  },
+  "submission": {
+    "written": true,
+    "path": "runs\\agent-explore2\\submission.csv",
+    "rows": 170588,
+    "from_iteration": 6,
+    "val_primary": 0.6010151715496408,
+    "flagged_for_review": false
+  },
+  "usage": {
+    "input": 160057,
+    "output": 29359,
+    "total": 189416,
+    "limit": 2000000,
+    "remaining": 1810584,
+    "calls": 6,
+    "failed_calls": 0,
+    "estimated_calls": 0,
+    "by_model": {
+      "claude-opus-5": 189416
+    },
+    "provider": "claude_cli",
+    "models": {
+      "fast": "claude-haiku-4-5-20251001",
+      "strong": "claude-opus-5"
+    },
+    "note": "0 of 6 call(s) had their token count estimated from prompt length because the request failed before reporting usage. Estimates can only overstate."
+  },
+  "resources": {
+    "run_id": "agent-explore2",
+    "iterations_used": 6,
+    "iterations_cap": 50,
+    "wall_clock_hours": 0.235,
+    "tokens": {
+      "input": 559056,
+      "output": 105000,
+      "total": 664056
+    },
+    "gpu_hours": 0.0,
+    "manual_interventions": 0,
+    "operational_restarts": 0,
+    "recovery_events": 0,
+    "canary_trips": 0,
+    "review_flags": 0,
+    "intervention_definition": "a human changing the agent instructions, objective or search space. Restarting a crashed process is operational recovery and is counted separately."
+  },
+  "review_required": []
+}

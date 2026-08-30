@@ -1,0 +1,33 @@
+{
+  "run_dir": "C:\\Users\\Lenovo\\track2-techjam\\techjam-track2-agent-2026\\runs\\first-contact-1788067593",
+  "model": "claude-opus-5",
+  "role": "strong",
+  "prompt_chars": 15547,
+  "response_chars": 23122,
+  "verdict": {
+    "parsed": false,
+    "valid": false,
+    "error": "the proposal is missing ['patch']"
+  },
+  "proposal": null,
+  "result": null,
+  "usage": {
+    "input": 56540,
+    "output": 19083,
+    "total": 75623,
+    "limit": 25000,
+    "remaining": 0,
+    "calls": 1,
+    "failed_calls": 0,
+    "estimated_calls": 0,
+    "by_model": {
+      "claude-opus-5": 75623
+    },
+    "provider": "claude_cli",
+    "models": {
+      "fast": "claude-haiku-4-5-20251001",
+      "strong": "claude-opus-5"
+    },
+    "note": "0 of 1 call(s) had their token count estimated from prompt length because the request failed before reporting usage. Estimates can only overstate."
+  }
+}

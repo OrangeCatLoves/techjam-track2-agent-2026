@@ -1,0 +1,525 @@
+No file-editing tools are available in this session, so the patch is emitted below as complete file contents for `harness/models/gen/` (the LLM-writable path). Nothing here touches a protected file.
+
+---
+
+# Experiment 2 — replace pointwise logloss with a listwise softmax objective over `(user_id, date)` lists
+
+## What I believe is wrong
+
+The baseline FM optimises **pointwise logloss**: it tries to get every impression's absolute probability right. Both scored metrics ignore absolute probability entirely — they only read the **order inside one user's list**. Three consequences follow, and two of them are confirmed by the numbers I just pulled:
+
+1. **Most of the pointwise loss budget is spent on lists that cannot score.** `user_composition` on valid: 30.3% of users are all-negative (nDCG fixed at 0, excluded from GAUC) and 11.9% all-positive (nDCG fixed at 1, excluded from GAUC). **42.2% of users are unrankable**, and GAUC is computed over the remaining 57.8% alone. Pointwise loss weights those degenerate users exactly like discriminative ones. A listwise objective that conditions on the list makes them contribute *zero gradient by construction* — the same set the metric zeroes out.
+
+2. **Pointwise loss wastes capacity on user-level offsets.** A user's base propensity is constant within their list, so it cannot change either metric (the organisers measured pure user-side first-order terms as contributing exactly zero). Pointwise logloss nonetheless spends embedding capacity fitting it, because that's what lowers logloss. Under a within-group softmax, anything constant within a list cancels analytically — the gradient is invariant to per-group shifts, so the model *cannot* spend capacity there.
+
+3. **Train and eval list lengths only match under one grouping.** `list_size_profile` on train: `user_id` gives mean 43.5 (median 31, p90 97); `user_id+date` gives **mean 5.77, median 3**. Valid lists average 5.58. So `(user_id, date)` matches the evaluation list geometry almost exactly, while `user_id` is 7.8× too long — a listwise softmax over 43-item lists optimises a top-1-of-43 problem the metric never asks about. This is the grouping choice the corpus explicitly refused to pre-answer; the measurement settles it.
+
+This is a structural mismatch, not a tuning knob — which is what the strike rule demands. Iteration 1 produced no score, so there is no saved best to protect; the cheapest-to-reject move is also the one that burns the run.
+
+## Why this should move the metric
+
+Softmax cross-entropy against the normalised label distribution has gradient `p_i − y_i/Y_g` inside each list. It is a *contrastive* objective over exactly the comparison set the metric evaluates. GAUC is a pairwise quantity, and softmax CE upper-bounds the pairwise ranking loss while additionally concentrating mass at the head of the list — which is what nDCG@**5** measures on lists of mean size 5.6, where the whole list is essentially the top-5. I expect **GAUC to move more than nDCG@5**, and I instrument them separately so I can tell.
+
+**The hedge:** I drop groups with `Y_g ∈ {0, n_g}` (they carry no ordering information — this is precisely GAUC's discriminative-user definition), which discards signal about globally-bad items. So the objective is `listwise + 0.2 × pointwise`, the pointwise term running over *all* rows as a stabiliser and a source of gradient for degenerate lists. Each term is normalised by its own count so the mix weight is scale-free. `0.2` is asserted as a stabiliser, not a tuned value — I have not fit it.
+
+Everything else is held at baseline (k=16, 5 fields, same FM algebra), so a delta is attributable to the objective.
+
+**Expected gain:** +0.010 val primary. **Expected cost:** ~6 min.
+
+---
+
+## `harness/models/gen/losses.py`
+
+```python
+"""Ranking objectives conforming to frozen interface 2:
+
+    loss_and_grad(z, y, groups) -> (loss: float, dL_dz: np.ndarray)
+
+Objectives are callable classes so a stateful one (sampled pairwise) can carry
+its own seeded RNG and remain deterministic. Nothing here touches raw data,
+labels of the test split, or any protected module.
+"""
+import numpy as np
+
+__all__ = ["group_layout", "PointwiseLogloss", "ListwiseSoftmax",
+           "BPRSampled", "Hybrid", "build_loss"]
+
+
+def group_layout(groups):
+    """Contiguous-group layout after a stable sort.
+
+    Returns (order, starts, counts) where groups[order] is sorted, starts are
+    the first positions of each run and counts their lengths.
+    """
+    groups = np.asarray(groups)
+    n = groups.shape[0]
+    order = np.argsort(groups, kind="stable")
+    if n == 0:
+        z = np.zeros(0, dtype=np.int64)
+        return order, z, z
+    gs = groups[order]
+    starts = np.flatnonzero(
+        np.concatenate((np.array([True]), gs[1:] != gs[:-1]))).astype(np.int64)
+    counts = np.diff(np.concatenate((starts, np.array([n], dtype=np.int64))))
+    return order, starts, counts
+
+
+def _sigmoid(z):
+    out = np.empty_like(z)
+    pos = z >= 0
+    out[pos] = 1.0 / (1.0 + np.exp(-z[pos]))
+    ez = np.exp(z[~pos])
+    out[~pos] = ez / (1.0 + ez)
+    return out
+
+
+class PointwiseLogloss:
+    """Baseline objective. Mean binary cross-entropy with logits. Ignores groups."""
+
+    name = "pointwise_logloss"
+
+    def __call__(self, z, y, groups=None):
+        z = np.asarray(z, dtype=np.float64)
+        y = np.asarray(y, dtype=np.float64)
+        n = max(z.shape[0], 1)
+        p = _sigmoid(z)
+        eps = 1e-12
+        loss = -float(np.sum(y * np.log(p + eps) + (1 - y) * np.log(1 - p + eps))) / n
+        return loss, (p - y) / n
+
+
+class ListwiseSoftmax:
+    """Softmax cross-entropy inside each group against the normalised label
+    distribution t_i = y_i / sum_g(y).
+
+        L_g = -sum_i t_i log p_i ,  dL/dz_i = p_i - t_i
+
+    Groups with sum(y) == 0 or sum(y) == n_g carry no ordering information and
+    are dropped: they are exactly the all-negative / all-positive users that
+    GAUC excludes and whose nDCG@5 is constant. Loss is averaged over the
+    surviving groups so its scale does not depend on batch composition.
+    """
+
+    name = "listwise_softmax"
+
+    def __init__(self, drop_degenerate=True):
+        self.drop_degenerate = bool(drop_degenerate)
+
+    def __call__(self, z, y, groups):
+        z = np.asarray(z, dtype=np.float64)
+        y = np.asarray(y, dtype=np.float64)
+        n = z.shape[0]
+        grad = np.zeros(n, dtype=np.float64)
+        if n == 0:
+            return 0.0, grad
+
+        order, starts, counts = group_layout(groups)
+        zs, ys = z[order], y[order]
+
+        # per-group max, for numerical stability
+        mrep = np.repeat(np.maximum.reduceat(zs, starts), counts)
+        e = np.exp(zs - mrep)
+        srep = np.repeat(np.add.reduceat(e, starts), counts)
+        p = e / srep
+
+        Y = np.add.reduceat(ys, starts)
+        if self.drop_degenerate:
+            keep = (Y > 0) & (Y < counts)
+        else:
+            keep = Y > 0
+        ng = int(keep.sum())
+        if ng == 0:
+            return 0.0, grad
+
+        safeY = np.where(Y > 0, Y, 1.0)
+        t = ys / np.repeat(safeY, counts)
+        krep = np.repeat(keep.astype(np.float64), counts)
+
+        loss = -float(np.sum(krep * t * np.log(p + 1e-12))) / ng
+        grad[order] = krep * (p - t) / ng
+        return loss, grad
+
+
+class BPRSampled:
+    """Pairwise BPR, one negative sampled per positive from the same group.
+
+    Not used by this experiment; kept available so the follow-up is a config
+    change rather than a rewrite.
+    """
+
+    name = "bpr_sampled"
+
+    def __init__(self, seed=0, n_neg=1):
+        self.rng = np.random.default_rng(seed)
+        self.n_neg = int(n_neg)
+
+    def __call__(self, z, y, groups):
+        z = np.asarray(z, dtype=np.float64)
+        y = np.asarray(y, dtype=np.float64)
+        grad = np.zeros(z.shape[0], dtype=np.float64)
+        order, starts, counts = group_layout(groups)
+        ys = y[order]
+        total, npairs = 0.0, 0
+        for s, c in zip(starts, counts):
+            idx = order[s:s + c]
+            lab = ys[s:s + c]
+            pos, neg = idx[lab > 0], idx[lab <= 0]
+            if pos.size == 0 or neg.size == 0:
+                continue
+            for _ in range(self.n_neg):
+                j = neg[self.rng.integers(0, neg.size, size=pos.size)]
+                d = z[pos] - z[j]
+                sg = _sigmoid(-d)
+                total += float(np.sum(np.logaddexp(0.0, -d)))
+                np.add.at(grad, pos, -sg)
+                np.add.at(grad, j, sg)
+                npairs += pos.size
+        if npairs == 0:
+            return 0.0, grad
+        return total / npairs, grad / npairs
+
+
+class Hybrid:
+    """Weighted sum of objectives. Each component self-normalises, so weights
+    are scale-free and comparable."""
+
+    def __init__(self, parts):
+        self.parts = list(parts)                      # [(weight, loss_obj), ...]
+        self.name = "+".join(f"{w:g}*{o.name}" for w, o in self.parts)
+
+    def __call__(self, z, y, groups):
+        total = 0.0
+        grad = np.zeros(np.asarray(z).shape[0], dtype=np.float64)
+        for w, obj in self.parts:
+            if w == 0.0:
+                continue
+            l, g = obj(z, y, groups)
+            total += w * l
+            grad += w * g
+        return total, grad
+
+
+def build_loss(kind="listwise", pointwise_mix=0.2, seed=0):
+    if kind == "pointwise":
+        return PointwiseLogloss()
+    if kind == "listwise":
+        core = ListwiseSoftmax()
+    elif kind == "bpr":
+        core = BPRSampled(seed=seed)
+    else:
+        raise ValueError(f"unknown loss kind: {kind}")
+    if pointwise_mix and pointwise_mix > 0:
+        return Hybrid([(1.0, core), (float(pointwise_mix), PointwiseLogloss())])
+    return core
+```
+
+## `harness/models/gen/fm_listwise.py`
+
+```python
+"""FM with a pluggable ranking objective, trained on group-aligned batches.
+
+Only the objective and the batching change relative to the baseline FM: same
+five fields, same second-order algebra, same embedding dimension. A listwise
+loss requires whole lists inside a batch, so batches are formed from complete
+groups rather than shuffled rows.
+
+Grouping is (user_id, date). Measured: train mean list size 5.77 under that
+grouping vs 43.5 under user_id alone, against a valid mean of 5.58.
+
+Test labels are never read. Test rows are featurised from their 6 known
+columns only; index 6 is not touched for that split.
+"""
+import time
+import numpy as np
+
+from harness.models.gen.losses import build_loss, group_layout
+
+# Column order of a row tuple from harness.data.load(). Label at index 6 for
+# train/valid; absent for test (label-stripped by the harness, see CLAUDE.md 5).
+C_DATE, C_USER, C_VIDEO, C_AUTHOR, C_TAB, C_DUR, C_LABEL = 0, 1, 2, 3, 4, 5, 6
+N_FIELDS = 5
+FIELD_NAMES = ("user", "video", "author", "tab", "dur_bucket")
+
+
+# ------------------------------------------------------------------ evaluation
+def _evaluate(users, y, scores):
+    """Call the official evaluator. Never reimplemented; only its output is
+    normalised to fixed key names."""
+    from harness import evaluate as ev
+    fn = getattr(ev, "evaluate", ev)
+    res = fn(users, y, scores)
+    if isinstance(res, dict):
+        g = float(res.get("gauc", res.get("GAUC")))
+        n = float(res.get("ndcg5", res.get("ndcg@5", res.get("NDCG@5"))))
+        p = res.get("primary")
+    else:
+        g, n, p = float(res[0]), float(res[1]), None
+    p = float(p) if p is not None else 0.5 * (g + n)
+    return {"gauc": g, "ndcg5": n, "primary": p}
+
+
+# --------------------------------------------------------------- featurisation
+def _rows_to_arrays(rows, has_label):
+    a = np.asarray(rows, dtype=np.int64)
+    out = {
+        "date": a[:, C_DATE], "user": a[:, C_USER], "video": a[:, C_VIDEO],
+        "author": a[:, C_AUTHOR], "tab": a[:, C_TAB], "dur": a[:, C_DUR],
+    }
+    out["y"] = a[:, C_LABEL].astype(np.float64) if has_label else None
+    return out
+
+
+class Encoder:
+    """Vocabularies and duration quantiles fitted on TRAIN ONLY. Index 0 of each
+    field is the out-of-vocabulary slot, so unseen keys at eval time are handled
+    rather than crashing."""
+
+    def __init__(self, n_dur_buckets=10):
+        self.n_dur_buckets = n_dur_buckets
+
+    def fit(self, tr):
+        self.vocab = {}
+        for f in ("user", "video", "author", "tab"):
+            keys = np.unique(tr[f])
+            self.vocab[f] = {int(k): i + 1 for i, k in enumerate(keys)}
+        qs = np.linspace(0, 100, self.n_dur_buckets + 1)[1:-1]
+        self.dur_edges = np.unique(np.percentile(tr["dur"], qs))
+        sizes = [len(self.vocab[f]) + 1 for f in ("user", "video", "author", "tab")]
+        sizes.append(len(self.dur_edges) + 2)
+        self.sizes = sizes
+        self.offsets = np.concatenate(([0], np.cumsum(sizes)[:-1])).astype(np.int64)
+        self.n_feat = int(np.sum(sizes))
+        return self
+
+    def _map(self, f, vals):
+        v = self.vocab[f]
+        return np.fromiter((v.get(int(x), 0) for x in vals),
+                           dtype=np.int64, count=vals.shape[0])
+
+    def transform(self, d):
+        cols = [self._map(f, d[f]) for f in ("user", "video", "author", "tab")]
+        cols.append(np.searchsorted(self.dur_edges, d["dur"], side="right") + 1)
+        X = np.stack(cols, axis=1)
+        return (X + self.offsets[None, :]).astype(np.int64)
+
+
+# ------------------------------------------------------------------------- FM
+class FM:
+    def __init__(self, n_feat, k=16, lr=0.02, reg=1e-5, seed=0):
+        rng = np.random.default_rng(seed)
+        self.k, self.lr, self.reg = k, lr, reg
+        self.w0 = 0.0
+        self.W = np.zeros(n_feat, dtype=np.float64)
+        self.V = rng.normal(0.0, 0.01, size=(n_feat, k))
+        self.mW = np.zeros_like(self.W); self.vW = np.zeros_like(self.W)
+        self.mV = np.zeros_like(self.V); self.vV = np.zeros_like(self.V)
+        self.m0 = 0.0; self.v0 = 0.0
+        self.t = 0
+
+    def _forward(self, X):
+        Vx = self.V[X]                              # (n, F, k)
+        s = Vx.sum(axis=1)                          # (n, k)
+        second = 0.5 * ((s * s).sum(1) - (Vx * Vx).sum(2).sum(1))
+        z = self.w0 + self.W[X].sum(axis=1) + second
+        return z, Vx, s
+
+    def predict(self, X, chunk=200_000):
+        out = np.empty(X.shape[0], dtype=np.float64)
+        for i in range(0, X.shape[0], chunk):
+            out[i:i + chunk] = self._forward(X[i:i + chunk])[0]
+        return out
+
+    def step(self, X, dz):
+        """One Adam step given dL/dz. Sparse: only touched rows are updated."""
+        _, Vx, s = self._forward(X)
+        dv = dz[:, None, None] * (s[:, None, :] - Vx)      # (n, F, k)
+        idx = X.reshape(-1)
+        gw_flat = np.repeat(dz, N_FIELDS)
+        gv_flat = dv.reshape(-1, self.k)
+
+        uniq, inv = np.unique(idx, return_inverse=True)
+        o = np.argsort(inv, kind="stable")
+        invs = inv[o]
+        starts = np.flatnonzero(
+            np.concatenate((np.array([True]), invs[1:] != invs[:-1])))
+        gW = np.add.reduceat(gw_flat[o], starts)
+        gV = np.add.reduceat(gv_flat[o], starts, axis=0)
+
+        gW += self.reg * self.W[uniq]
+        gV += self.reg * self.V[uniq]
+
+        self.t += 1
+        b1, b2, eps = 0.9, 0.999, 1e-8
+        c1, c2 = 1.0 - b1 ** self.t, 1.0 - b2 ** self.t
+
+        self.mW[uniq] = b1 * self.mW[uniq] + (1 - b1) * gW
+        self.vW[uniq] = b2 * self.vW[uniq] + (1 - b2) * gW * gW
+        self.W[uniq] -= self.lr * (self.mW[uniq] / c1) / (np.sqrt(self.vW[uniq] / c2) + eps)
+
+        self.mV[uniq] = b1 * self.mV[uniq] + (1 - b1) * gV
+        self.vV[uniq] = b2 * self.vV[uniq] + (1 - b2) * gV * gV
+        self.V[uniq] -= self.lr * (self.mV[uniq] / c1) / (np.sqrt(self.vV[uniq] / c2) + eps)
+
+        g0 = float(dz.sum())
+        self.m0 = b1 * self.m0 + (1 - b1) * g0
+        self.v0 = b2 * self.v0 + (1 - b2) * g0 * g0
+        self.w0 -= self.lr * (self.m0 / c1) / (np.sqrt(self.v0 / c2) + eps)
+
+    def snapshot(self):
+        return (self.w0, self.W.copy(), self.V.copy())
+
+    def restore(self, snap):
+        self.w0, self.W, self.V = snap[0], snap[1].copy(), snap[2].copy()
+
+
+# -------------------------------------------------------------------- batching
+def make_groups(d, mode="user_date"):
+    if mode == "user":
+        return d["user"].astype(np.int64)
+    if mode == "user_date":
+        return d["user"].astype(np.int64) * 100_000_000 + d["date"].astype(np.int64)
+    raise ValueError(mode)
+
+
+def _ragged_gather(order, starts, counts, sel):
+    """Row indices for the selected groups, groups kept contiguous."""
+    ss, cc = starts[sel], counts[sel]
+    total = int(cc.sum())
+    if total == 0:
+        return np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64)
+    base = np.repeat(ss - np.concatenate(([0], np.cumsum(cc)[:-1])), cc)
+    rows = order[base + np.arange(total)]
+    gid = np.repeat(np.arange(sel.shape[0], dtype=np.int64), cc)
+    return rows, gid
+
+
+# ------------------------------------------------------------------ experiment
+def run(data_dir, seed=0, loss_kind="listwise", pointwise_mix=0.2,
+        group_mode="user_date", k=16, lr=0.02, reg=1e-5,
+        epochs=15, groups_per_batch=512, patience=3, return_model=False):
+    t0 = time.time()
+    try:
+        from harness import data as hdata
+        splits = hdata.load(data_dir)
+
+        tr = _rows_to_arrays(splits["train"], has_label=True)
+        va = _rows_to_arrays(splits["valid"], has_label=True)
+
+        enc = Encoder().fit(tr)
+        Xtr, Xva = enc.transform(tr), enc.transform(va)
+        ytr, yva = tr["y"], va["y"]
+
+        gtr = make_groups(tr, group_mode)
+        order, starts, counts = group_layout(gtr)
+        n_groups = starts.shape[0]
+
+        loss_fn = build_loss(loss_kind, pointwise_mix=pointwise_mix, seed=seed)
+        model = FM(enc.n_feat, k=k, lr=lr, reg=reg, seed=seed)
+        rng = np.random.default_rng(seed + 1)
+
+        best = {"primary": -1.0, "epoch": -1}
+        best_snap, bad = None, 0
+        history = []
+
+        for ep in range(epochs):
+            perm = rng.permutation(n_groups)
+            for i in range(0, n_groups, groups_per_batch):
+                sel = perm[i:i + groups_per_batch]
+                rows, gid = _ragged_gather(order, starts, counts, sel)
+                if rows.size == 0:
+                    continue
+                Xb = Xtr[rows]
+                z, _, _ = model._forward(Xb)
+                _, dz = loss_fn(z, ytr[rows], gid)
+                if not np.all(np.isfinite(dz)):
+                    raise FloatingPointError(f"non-finite gradient at epoch {ep}")
+                model.step(Xb, dz)
+
+            m = _evaluate(va["user"], yva, model.predict(Xva))
+            history.append({"epoch": ep, **{kk: round(vv, 5) for kk, vv in m.items()}})
+            if m["primary"] > best["primary"] + 1e-6:
+                best = {"primary": m["primary"], "gauc": m["gauc"],
+                        "ndcg5": m["ndcg5"], "epoch": ep}
+                best_snap, bad = model.snapshot(), 0
+            else:
+                bad += 1
+                if bad >= patience:
+                    break
+
+        if best_snap is None:
+            raise RuntimeError("no epoch completed")
+        model.restore(best_snap)
+
+        sub = rng.choice(Xtr.shape[0], size=min(200_000, Xtr.shape[0]), replace=False)
+        train_m = _evaluate(tr["user"][sub], ytr[sub], model.predict(Xtr[sub]))
+        vs = model.predict(Xva)
+
+        out = {
+            "val_gauc": best["gauc"],
+            "val_ndcg5": best["ndcg5"],
+            "val_primary": best["primary"],
+            "diagnostics": {
+                "loss": getattr(loss_fn, "name", loss_kind),
+                "group_mode": group_mode,
+                "train_lists": int(n_groups),
+                "mean_train_list_size": round(float(counts.mean()), 3),
+                "best_epoch": best["epoch"],
+                "epochs_run": len(history),
+                "train_primary": round(train_m["primary"], 5),
+                "generalisation_gap": round(train_m["primary"] - best["primary"], 5),
+                "val_score_std": round(float(vs.std()), 5),
+                "history": history,
+                "seed": seed,
+            },
+            "error": None,
+            "seconds": round(time.time() - t0, 1),
+        }
+        if return_model:
+            out["_model"], out["_encoder"] = model, enc
+        return out
+
+    except Exception as e:  # one repair attempt happens upstream; report cleanly
+        import traceback
+        return {"val_gauc": None, "val_ndcg5": None, "val_primary": None,
+                "diagnostics": {"traceback": traceback.format_exc()[-2000:]},
+                "error": f"{type(e).__name__}: {e}",
+                "seconds": round(time.time() - t0, 1)}
+
+
+def predict_split(model, enc, rows, has_label=False):
+    """Scores for an arbitrary split. Labels are never read when has_label is
+    False, which is the case for test."""
+    return model.predict(enc.transform(_rows_to_arrays(rows, has_label)))
+
+
+if __name__ == "__main__":
+    import argparse, json
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data_dir", required=True)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--loss", default="listwise")
+    ap.add_argument("--pointwise_mix", type=float, default=0.2)
+    ap.add_argument("--group_mode", default="user_date")
+    a = ap.parse_args()
+    r = run(a.data_dir, seed=a.seed, loss_kind=a.loss,
+            pointwise_mix=a.pointwise_mix, group_mode=a.group_mode)
+    r.pop("_model", None); r.pop("_encoder", None)
+    print(json.dumps(r, indent=2))
+```
+
+## Experiment spec
+
+```json
+{"hypothesis": "Pointwise logloss is misaligned with two within-user ranking metrics: 42.2% of valid users are degenerate (30.3% all-negative, 11.9% all-positive) yet receive full pointwise weight, and user-constant terms it fits cannot change either metric. A softmax cross-entropy over each user's same-day impression list makes per-list constants cancel analytically and zeroes out exactly the degenerate users the metrics ignore. (user_id, date) is the grouping whose train list size (mean 5.77) matches valid (mean 5.58); user_id alone is 7.8x too long at 43.5.",
+ "target_stage": "objective",
+ "patch_kind": "new_loss_function",
+ "expected_gain": 0.010,
+ "expected_cost_minutes": 6.0}
+```
+
+## What each outcome tells the next iteration
+
+- **GAUC up, nDCG@5 flat or down** → the contrastive signal works but the head-of-list weighting does not; next move is BPR-vs-listwise or a position-discounted listwise weight, not more capacity.
+- **Both up** → grouping is the live variable; test `user_id` and session-based grouping from `time_ms` gaps against the now-established best.
+- **Both down** → the dropped degenerate lists mattered more than the alignment gained; raise `pointwise_mix`, or set `drop_degenerate=False` so all-positive lists still contribute. That is a one-argument change, deliberately.
+- **Non-finite gradient / crash** → the guard in the epoch loop names the epoch, and `diagnostics.traceback` is returned rather than raised, so the single repair attempt has something to work from. Iteration 1 failed with kind "unknown"; this runner cannot fail that way.

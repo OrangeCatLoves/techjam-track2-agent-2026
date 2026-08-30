@@ -315,14 +315,22 @@ def _anthropic_transport() -> Callable[..., Any]:
             'and never in .env.example, which is tracked.')
     client = anthropic.Anthropic(api_key=key)
 
+    # The SDK's accepted parameters shift between versions: anthropic 1.2.0
+    # dropped `temperature` from messages.create entirely. Rather than pin a
+    # version or guess, ask the installed SDK what it takes and send only that.
+    import inspect
+    accepted = set(inspect.signature(client.messages.create).parameters)
+
     def send(*, model: str, prompt: str, system: str | None,
              max_tokens: int, temperature: float):
         kwargs: Dict[str, Any] = {
-            'model': model, 'max_tokens': max_tokens, 'temperature': temperature,
+            'model': model, 'max_tokens': max_tokens,
             'messages': [{'role': 'user', 'content': prompt}],
         }
-        if system:
+        if system and 'system' in accepted:
             kwargs['system'] = system
+        if 'temperature' in accepted:
+            kwargs['temperature'] = temperature
         return client.messages.create(**kwargs)
 
     return send

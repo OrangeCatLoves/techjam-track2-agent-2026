@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "run_id": "087bb45ebeaf",
+  "rule": {
+    "epsilon": 0.002,
+    "n_consecutive": 3,
+    "max_iterations": 50,
+    "max_wall_clock_hours": 6.0,
+    "comparison": "per_iteration",
+    "allow_early_stop": false
+  },
+  "iteration": 1,
+  "failed_iterations": 0,
+  "strikes": 0,
+  "best_primary": 0.601468756352959,
+  "best_iteration": 1,
+  "best_ref": "runs\\control-main\\checkpoints\\iter_001.npz",
+  "elapsed_seconds": 66.29070359980687,
+  "converged": false,
+  "converged_reason": null,
+  "converged_at_iteration": null,
+  "history": [
+    {
+      "iteration": 1,
+      "status": "ok",
+      "primary": 0.601468756352959,
+      "best_before": null,
+      "gain": null,
+      "strike": false,
+      "content_hash": "d0811ea8dbfa2a20",
+      "meta": {},
+      "new_best": true
+    }
+  ],
+  "tried": [
+    "d0811ea8dbfa2a20"
+  ]
+}

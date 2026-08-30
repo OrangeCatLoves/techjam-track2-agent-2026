@@ -1,0 +1,22 @@
+{
+  "error": "all 3 attempts failed. Last: BadRequestError: Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CeYHK3B78AgVizRAJz9Vc'}",
+  "usage": {
+    "input": 12252,
+    "output": 0,
+    "total": 12252,
+    "limit": 25000,
+    "remaining": 12748,
+    "calls": 3,
+    "failed_calls": 3,
+    "estimated_calls": 3,
+    "by_model": {
+      "claude-opus-5": 12252
+    },
+    "provider": "anthropic",
+    "models": {
+      "fast": "claude-haiku-4-5-20251001",
+      "strong": "claude-opus-5"
+    },
+    "note": "3 of 3 call(s) had their token count estimated from prompt length because the request failed before reporting usage. Estimates can only overstate."
+  }
+}

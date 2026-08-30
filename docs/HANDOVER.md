@@ -216,6 +216,11 @@ until something good appears. Full detail in `docs/RESULTS.md`.
 
 **Zero manual interventions. 7 of 50 iterations. 0.74 of 6 hours. 237k tokens.**
 
+**This is the scored submission** — `runs/agent-explore4/submission.csv`, validated
+and committed. Exploration continues, but a later result replaces it only if it is
+confirmed across several seed sets *and* better by more than 0.002. Below that
+threshold we would be selecting on noise: see `docs/RESULTS.md` §7.
+
 ### The honest summary
 
 **The agent beat the baseline on run 4, and only on run 4.** Roughly twenty

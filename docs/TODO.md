@@ -13,7 +13,8 @@ sets do not overlap.
 
 ## Status at a glance
 
-Seven of nine deliverables are done. The two that are missing are both writing.
+Eight of nine deliverables are done. The one gap is writing: the README, the
+Devpost description and the report.
 
 | deliverable | state | owner |
 |---|---|---|
@@ -22,7 +23,7 @@ Seven of nine deliverables are done. The two that are missing are both writing.
 | manual-intervention count | done — **0** | — |
 | results table | done in `RESULTS.md` | — |
 | resource usage | measured | — |
-| final submission | written and validated, **decision open** | A |
+| final submission | **decided — run 4**, validated, committed | — |
 | **README** | **14 TODO placeholders** | B |
 | **Devpost description** | **not started** | B |
 | **detailed report** (required, no video) | **not started** | B |
@@ -31,39 +32,25 @@ Seven of nine deliverables are done. The two that are missing are both writing.
 
 ## Owner A — code, runs, the submission
 
-### A1. Push the rewritten history — do this first ⚠️
+### A1. Push — DONE
 
-```bash
-git push --force-with-lease origin main
-```
+History was rewritten to strip commit trailers so the repo shows a single author.
+Pushed, verified, and the local backup refs have been cleaned up. GitHub holds the
+authoritative history.
 
-Must happen **before Owner B clones**. History was rewritten to strip commit
-trailers; if B clones first, her local copy will not match and she will have to
-reset.
+*(If GitHub's Contributors sidebar still shows two names, that panel is recomputed on
+a schedule rather than on push. It clears itself.)*
 
-Once GitHub looks right, delete the safety branch:
+### A2. Scored submission — DECIDED, no action needed
 
-```bash
-git branch -D backup-before-trailer-strip
-```
+**Run 4 is the scored submission**: `runs/agent-explore4/submission.csv`, validated,
+committed. Confirmed across three seed sets at mean 0.6036.
 
-### A2. Decide which run is the scored submission — blocks the writeups
+Owner B can quote it immediately; nothing blocks the results table.
 
-The one genuinely open decision. Both options are defensible; the writeups need to
-name one.
-
-**Option 1 — declare run 4 the scored run.** It was unattended, converged on the
-no-improvement rule, recorded zero manual interventions, and its submission is
-written and validated at `runs/agent-explore4/submission.csv`. The checkpoint fix
-that came after it changed only the *submission writer*, not any experiment, so no
-science changes. Requires stating that plainly in the report.
-
-**Option 2 — one clean run with frozen code (~45 min).** The by-the-book reading of
-CLAUDE.md §12.2 M4. **Risk:** the agent has no memory across runs and all four runs
-so far opened with the same failed idea, so a fresh run may never rediscover the
-ensemble that produced the result.
-
-Whichever is chosen, `docs/RESULTS.md` §7 must be updated to name it.
+It is replaced only by a result that is (a) confirmed across several seed sets and
+(b) better by more than 0.002. See `RESULTS.md` §7 for why that threshold and not a
+smaller one.
 
 ### A3. Optional — try to move the score
 

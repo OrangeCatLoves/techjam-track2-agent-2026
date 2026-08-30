@@ -212,13 +212,49 @@ resource figures quoted above.
 
 ---
 
-## 7. Open item
+## 7. The scored submission — decided
 
-**Which run is the scored submission** has not been decided. Run 4 was unattended,
-converged, and recorded zero manual interventions, and its submission is written and
-validated. A fresh run with frozen code would be the by-the-book reading of
-CLAUDE.md §12.2 M4, but the agent has no memory across runs, so a fresh run may not
-rediscover the ensemble.
+**Run 4 is the scored submission.**
 
-Whichever is chosen, this document reports both, and the run that produced the
-submitted file will be named explicitly.
+`runs/agent-explore4/submission.csv` — 170,588 rows, written from the
+validation-best checkpoint (iteration 4), and accepted by the organisers' own
+`submit.py --check`.
+
+### Why this run
+
+- It was **unattended** and converged on the no-improvement rule, not on a cap.
+- **Zero manual interventions.**
+- Its result is **confirmed**: three independent seed sets, mean 0.6036, spread
+  0.0006 (§3). It is not a single lucky measurement.
+- It beats both the published baseline (+0.0021) and our own deterministic control
+  (+0.0011).
+
+### One disclosure
+
+The checkpoint *reader* was fixed after this run finished. An ensemble checkpoint
+stores `V0/W0/b0 ... Vn/Wn/bn` and `load_checkpoint` originally read only the
+single-model shape, so the submission could not be written at first. That fix
+changed the **submission writer only** — no experiment was re-run, no score changed,
+and the model weights are the ones run 4 produced. Stated here rather than left for
+someone to notice.
+
+### When this would be replaced
+
+Exploration continues. A later result replaces run 4 **only** if it clears both bars:
+
+1. **Confirmed the same way** — re-run across several independent seed sets, not a
+   single measurement.
+2. **Better by more than 0.002**, not by 0.0005.
+
+That threshold is not arbitrary. Validation is 124,909 rows and single-model seed
+noise is ±0.0008, so running many experiments and taking the maximum would be
+expected to manufacture roughly +0.0012 of pure luck — about the size of our entire
+real edge over the control. CLAUDE.md §8 names this directly: *"selection noise over
+many decisions on 124,909 rows"* is a reason validation lies.
+
+The discipline that made 0.6036 believable was confirming it across three seed sets.
+Anything that replaces it earns its place the same way, or it is noise wearing a
+result's clothes.
+
+If nothing clears those bars, run 4 is what we submit, and the attempts are reported
+either way.

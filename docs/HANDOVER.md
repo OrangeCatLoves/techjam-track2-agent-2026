@@ -411,6 +411,7 @@ the bottleneck.
 
 | file | what it is |
 |---|---|
+| `docs/TODO.md` | **what is left and who owns it — start here** |
 | `docs/RESULTS.md` | **the numbers, and how the winning experiment was reached** |
 | `CLAUDE.md` | the spec. Overrides general ML practice where they conflict |
 | `docs/MILESTONE_1.md` | the foundation: safety, measurement, the contract test |

@@ -2,9 +2,21 @@
 
 **Deadline: 1 September, 02:00.**
 
-Two people, split by **file area** so nobody hits a merge conflict. Owner A works in
-`runs/`, `harness/`, `agent/`. Owner B works in `README.md` and the writeups. Those
-sets do not overlap.
+Two people, split by **file area** so nobody hits a merge conflict.
+
+| file | owner |
+|---|---|
+| `harness/`, `agent/`, `tests/`, `configs/` | A |
+| `docs/RESULTS.md`, `docs/TODO.md` | A |
+| `runs/<a-name>-*/` | A |
+| `README.md`, Devpost, the report | **B** |
+| `docs/RESULTS_teammate.md` | **B** |
+| `runs/<b-name>-*/` | **B** |
+
+Two rules make conflicts impossible rather than unlikely: **never edit a file in the
+other column**, and **`git pull --rebase origin main` before every push**. Different
+files rebase cleanly every time. A conflict means the split was crossed somewhere —
+stop and find out where rather than resolving by hand.
 
 **Read first:** `docs/HANDOVER.md` (setup and current state), then `docs/RESULTS.md`
 (every number you will need to quote).
@@ -193,6 +205,10 @@ so this needs no coordination beyond picking distinct names.
 have committed 2.4 MB checkpoints and 4.4 MB submissions. The rules are now
 name-agnostic so either shape is safe, but `runs/<name>-<n>/` keeps everything in one
 place.)*
+
+**Record your findings in `docs/RESULTS_teammate.md`, not in `RESULTS.md`.** That
+file is yours alone, so the two of you never touch the same file and git has nothing
+to conflict over. A folds anything that matters into the master document at the end.
 
 **Your result replaces run 4 only if it clears both bars** (`RESULTS.md` §8):
 

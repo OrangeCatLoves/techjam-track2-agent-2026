@@ -268,11 +268,10 @@ class LLMClient:
 
     def _send(self, *, model: str, prompt: str, system: str | None,
               max_tokens: int, temperature: float):
-        if self._transport is not None:
-            return self._transport(model=model, prompt=prompt, system=system,
-                                   max_tokens=max_tokens, temperature=temperature)
-        return _anthropic_transport()(model=model, prompt=prompt, system=system,
-                                      max_tokens=max_tokens, temperature=temperature)
+        if self._transport is None:
+            self._transport = build_transport(self.provider)
+        return self._transport(model=model, prompt=prompt, system=system,
+                               max_tokens=max_tokens, temperature=temperature)
 
     # -- reporting ---------------------------------------------------------
 
@@ -302,6 +301,111 @@ def _environment() -> Dict[str, str]:
         if value:
             merged[key] = value
     return merged
+
+
+#: Provider names that route through the Claude Code CLI rather than the API.
+CLI_PROVIDERS = ('claude_cli', 'claude-cli', 'claude_code', 'claude-code', 'cli')
+
+#: Environment variables that make the Claude Code CLI abandon the subscription.
+#: Verified: with either set, it prints "ANTHROPIC_API_KEY ... takes precedence
+#: over your claude.ai login" and bills the API account instead. A dead key in
+#: .env would therefore turn every call into a credit-balance error.
+SUBSCRIPTION_BLOCKERS = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN',
+                         'ANTHROPIC_BASE_URL', 'ANTHROPIC_BEDROCK_BASE_URL',
+                         'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX')
+
+#: Tools the CLI must not use. We want a completion, not an agent with filesystem
+#: access: this process already owns the sandbox, the guards and the patch
+#: validator, and a second agent editing files behind them would bypass all three.
+CLI_DISALLOWED_TOOLS = ('Bash,Read,Write,Edit,NotebookEdit,Glob,Grep,'
+                        'WebSearch,WebFetch,Task,TodoWrite')
+
+
+class _CLIResponse:
+    """Adapts the CLI's JSON to the shape ``_to_response`` already understands."""
+
+    def __init__(self, payload: Dict[str, Any], model: str):
+        self.content = payload.get('result') or ''
+        self.model = model
+        self.stop_reason = payload.get('stop_reason')
+        usage = payload.get('usage') or {}
+        # Cache creation and cache reads are real tokens and are counted. The
+        # Feasibility figure should not flatter us by ignoring the ones Claude
+        # Code spends on its own context.
+        self.usage = type('Usage', (), {
+            'input_tokens': int(usage.get('input_tokens', 0) or 0)
+                            + int(usage.get('cache_creation_input_tokens', 0) or 0)
+                            + int(usage.get('cache_read_input_tokens', 0) or 0),
+            'output_tokens': int(usage.get('output_tokens', 0) or 0),
+        })()
+        self.cost_usd = payload.get('total_cost_usd')
+        self.is_error = bool(payload.get('is_error'))
+
+
+def _claude_cli_transport(timeout: float = 300.0) -> Callable[..., Any]:
+    """Route calls through the Claude Code CLI, on the user's subscription.
+
+    No API key, and none permitted: ``SUBSCRIPTION_BLOCKERS`` are stripped from
+    the child environment, because their presence silently switches billing away
+    from the subscription and onto an API account that may have no balance.
+
+    The prompt goes over **stdin**, not as an argument. A proposer prompt is
+    ~15,000 characters and Windows caps a command line at about 32,000, so an
+    argument would work right up until the corpus grew.
+    """
+    import json as _json
+    import shutil
+    import subprocess
+
+    executable = shutil.which('claude')
+    if not executable:
+        raise LLMUnavailable(
+            'the `claude` CLI is not on PATH. Install Claude Code, or set '
+            'LLM_PROVIDER=anthropic with an API key that has credit.')
+
+    def send(*, model: str, prompt: str, system: str | None,
+             max_tokens: int, temperature: float):
+        argv = [executable, '-p', '--model', model, '--output-format', 'json',
+                '--disallowed-tools', CLI_DISALLOWED_TOOLS]
+        if system:
+            argv += ['--system-prompt', system]
+
+        env = {k: v for k, v in os.environ.items()
+               if k not in SUBSCRIPTION_BLOCKERS}
+        env['PYTHONIOENCODING'] = 'utf-8'
+
+        proc = subprocess.run(argv, input=prompt, env=env, timeout=timeout,
+                              capture_output=True, text=True,
+                              encoding='utf-8', errors='replace')
+        if proc.returncode != 0:
+            raise LLMError(f'claude CLI exited {proc.returncode}: '
+                           f'{(proc.stderr or proc.stdout or "")[-500:]}')
+
+        # A warning line can precede the JSON, so parse from the first brace.
+        text = proc.stdout or ''
+        start = text.find('{')
+        if start == -1:
+            raise LLMError(f'no JSON in CLI output: {text[:300]}')
+        try:
+            payload = _json.loads(text[start:])
+        except _json.JSONDecodeError as exc:
+            raise LLMError(f'could not parse CLI output: {exc}') from None
+
+        response = _CLIResponse(payload, model)
+        if response.is_error or not response.content:
+            raise LLMError(
+                f'the CLI returned an error or empty result '
+                f'(stop_reason={response.stop_reason}): {str(response.content)[:300]}')
+        return response
+
+    return send
+
+
+def build_transport(provider: str) -> Callable[..., Any]:
+    """Pick a transport for *provider*."""
+    if provider in CLI_PROVIDERS:
+        return _claude_cli_transport()
+    return _anthropic_transport()
 
 
 def _anthropic_transport() -> Callable[..., Any]:

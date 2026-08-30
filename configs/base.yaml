@@ -143,8 +143,16 @@ agent:
   # and retries, because those consume tokens too and Feasibility is scored on the
   # total. Raise deliberately for the scored run if the dev budget proves tight.
   token_budget:
-    limit: 300000
-    warn_at: 200000
+    # Sized for the claude_cli transport, which carries ~15k tokens of Claude
+    # Code's own context per call regardless of prompt size. A 50-iteration run
+    # with repairs is 50-75 calls, so ~1.5M. The ceiling is a runaway backstop,
+    # not a cost control: on a subscription these are usage, not dollars, and the
+    # binding limits are the 50-iteration cap and the six-hour clock.
+    #
+    # Drop to ~300000 if switching back to LLM_PROVIDER=anthropic, where the
+    # per-call overhead disappears and tokens are billed directly.
+    limit: 2000000
+    warn_at: 1500000
   protected_paths:
     - starter/                     # organiser code, read-only
     - configs/                     # holds THIS list, the convergence rule, the

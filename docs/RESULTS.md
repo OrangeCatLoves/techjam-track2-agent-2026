@@ -426,6 +426,74 @@ this benchmark resists movement.
 interventions. Stage usage `objective 5, features 3, ensemble 1` — against
 `features 0` in all four previous runs combined.
 
+### Snapshot ensembling — measured, and it does not work
+
+`docs/PROPOSAL_expose_snapshots.md` (contributor B) argued that blending several
+epochs of one training run is the one source of member diversity that costs no
+member quality, and that the harness already implemented it behind an
+undocumented `snapshots` key.
+
+**Two separate things had to be checked. The first was wrong and the second is
+measured false.**
+
+The capability does not exist. `git log -S"snapshots"` across all branches returns
+nothing; `snapshot_states`, `snapshots_per_seed` and `deque` have zero occurrences;
+`train_fm` and `train_ensemble` have no such parameter, and the proposal's example
+`CONFIG` raises `TypeError: train_fm() got an unexpected keyword argument
+'snapshots'`. The cited line numbers point at unrelated code. So this was never a
+one-line documentation fix — it would have been a build.
+
+Rather than build it, the premise was measured directly: train five seeds at run
+4's operating point, keep every epoch's validation predictions, and blend fixed
+windows around each seed's best epoch. No epoch is chosen by its own score, which
+would be fitting validation with extra steps.
+
+| blend | members | val primary | vs 5 seeds |
+|---|---|---|---|
+| **5 seeds, best epoch each** | 5 | **0.6030** | — |
+| 5 seeds x 2 snapshots | 10 | 0.6026 | −0.0004 |
+| 5 seeds x 3 snapshots | 15 | 0.6026 | −0.0004 |
+| 5 seeds x 4 snapshots | 20 | 0.6027 | −0.0003 |
+| 2 seeds x 2 snapshots | 4 | 0.6026 | −0.0004 |
+| 2 seeds x 3 snapshots | 6 | 0.6025 | −0.0005 |
+
+Every snapshot configuration is slightly worse, and the cheap ones do not match
+the 5-seed blend either, so there is not even a feasibility story in it.
+
+**The reason is not the one predicted.** The prediction on record was that epochs
+of one run would be near-duplicates — sharing an initialisation and nearly all of
+their trajectory — and would agree far above the 0.8995 measured for seeds.
+Measured:
+
+```
+epochs within a seed   0.9001
+seeds at their best    0.8940
+```
+
+Essentially the same. Snapshots are marginally more redundant than seeds, not
+dramatically so, and the redundancy argument does not explain the loss. What
+explains it is member quality: a snapshot window necessarily includes epochs
+either side of the peak, and those members are worse than the peak. Within a
+single seed, blending its own window against its own best epoch is a wash across
+five seeds — +0.0004, −0.0009, −0.0005, −0.0002, +0.0009.
+
+**This is now the third independent confirmation of one mechanism.** Model-config
+diversity (section 5), heterogeneous-batch mixing (contributor B, Finding 4) and
+snapshots all raised or held diversity while lowering member quality, and all
+three produced no gain. The blend is at the point where **every member that can
+still be constructed is worse than the existing average by more than its
+disagreement is worth.** The ensembling axis is closed in a fourth degree of
+freedom.
+
+One correction to the proposal's supporting argument: it states that every
+iteration ever beating 0.6017 was an ensemble iteration and that objectives are
+"0 for 24". Across all run logs, of the ten iterations above 0.6017, four are
+`ensemble`, four are `model`, one is `objective` (0.6019) and one is `features`;
+there are 43 objective iterations, not 24. Ensembles remain the most reliable
+winner, which was the point, but not the only one.
+
+`scripts/probe_snapshots.py` reproduces the table in about 13 minutes.
+
 ---
 
 ## 6. What did not work — twenty experiments

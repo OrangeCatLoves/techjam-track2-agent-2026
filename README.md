@@ -54,13 +54,44 @@ benchmark reduces to `primary_agent − 0.5946`.
 | LLM tokens, input + output | **237,365** (188,312 in / 49,053 out) |
 | GPU-hours | **0** |
 | GPU-hours | 0 |
-| **Manual interventions** | **0** |
+| **Manual interventions** | **0** — see *How to check that* below |
 | Operational restarts (not interventions) | **0** |
 | Recovery events (in-run, automatic) | 1 |
 
 Manual intervention is defined per the organiser webinar as a human changing the
 agent's instructions, objective, or search space. Restarting a crashed process,
 clearing a lock, or freeing disk is operational recovery and is counted separately.
+
+### How to check the zero-intervention claim
+
+The counter is **self-reported**: `harness/logger.py` counts events of kind
+`manual_intervention` in the run's event log, which a human writes. It records a
+declaration, not a detection, so on its own it is only as good as our honesty.
+
+Three things corroborate it, and all three are checkable from this repository:
+
+**The run is one unattended process.** Run 4's iterations are timestamped
+`15:24:52` to `15:48:03` on 2026-08-30 — seven iterations across 23 continuous
+minutes in `runs/agent-explore4/log.jsonl`.
+
+**Its only two events are automatic.** `events.jsonl` holds a timeout recovery
+(an automatic retry at 30% subsample) and the submission failure that followed.
+Neither is a human acting.
+
+**The search space was frozen across the window.** The commits touching
+`harness/`, `agent/`, `knowledge/` or `configs/` nearest that run land at 15:03
+and 16:03 — before it started and after it finished:
+
+```
+git log --format="%h %ad %s" --date=format:"%Y-%m-%d %H:%M"         --since="2026-08-30" --until="2026-08-31" -- harness/ agent/ knowledge/ configs/
+```
+
+**What the number does not claim.** Between runs the agent's environment did
+change — most significantly when the feature stage was added, which gave it a
+fifth pipeline stage it had never had. That is development between runs, not a
+human steering a run in progress, and the intervention definition in force covers
+the latter. The distinction is recorded here rather than left for a reader to
+discover.
 
 ---
 

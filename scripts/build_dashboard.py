@@ -184,7 +184,7 @@ var cards = [
   ['Official baseline', f4(D.baseline), 'FM with pointwise logloss'],
   ['Deterministic control', f4(D.control), '30-config scripted search, no LLM'],
   ['Agent, confirmed', f4(D.best), '+' + (D.best - D.baseline).toFixed(4) + ' over baseline'],
-  ['Manual interventions', '0', 'across every run'],
+  ['Manual interventions', '0', 'no human input mid-run'],
   ['Experiments', String(D.total_iterations), D.runs + ' runs'],
   ['LLM tokens', Math.round(D.tokens / 1000) + 'k', 'GPU-hours: 0']
 ];

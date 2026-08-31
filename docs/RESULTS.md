@@ -780,6 +780,71 @@ from the opposite direction.
 
 `scripts/probe_covisitation.py` reproduces the table in about 5 minutes.
 
+### Would refitting on train + validation help? Yes — and it is the largest effect measured
+
+Q2 asks whether the winning configuration may be retrained on train + validation
+before predicting test. We took the conservative reading and disabled it. No ruling
+has arrived — but whether it would *help* does not need a ruling. It needs an
+experiment, and the data for it was already here.
+
+Shift the whole protocol one week earlier:
+
+```
+real     train Apr 8-21    select Apr 22-28    score Apr 29-May 8
+here     train Apr 8-14    select Apr 15-21    score Apr 22-28
+```
+
+April 22-28 is the real validation split, standing in for the test set. **The real
+test set is never touched.**
+
+- **Arm A, no refit** — train Apr 8-14, early-stop on Apr 15-21, score Apr 22-28.
+  This is our current protocol.
+- **Arm B, refit** — retrain on all of Apr 8-21 for the epoch count Arm A chose,
+  score the same Apr 22-28. This is what Q2 would permit.
+
+Arm B has no held-out set to stop on, so it reuses A's epoch count — exactly what a
+real refit does: keep the configuration, add the data. Both arms share one
+vocabulary built from the full period, so the only difference is which rows carry
+gradient. That slightly favours Arm A.
+
+| seed | no refit | refit | gain | epochs |
+|---|---|---|---|---|
+| 0 | 0.5981 | 0.6012 | **+0.0031** | 8 |
+| 1 | 0.5973 | 0.6014 | **+0.0040** | 7 |
+| 2 | 0.5974 | 0.6008 | **+0.0034** | 6 |
+| **mean** | **0.5976** | **0.6011** | **+0.0035** | |
+| spread | 0.0007 | 0.0005 | | |
+
+**Every refit run beats every non-refit run.** The two distributions do not
+overlap, the spreads are 0.0005-0.0007, and the effect is roughly four times the
+noise floor. Nothing else measured in this project separates this cleanly.
+
+**Scaling to the real case, stated honestly.** This protocol adds 28% more rows;
+the real refit would add about 11%. Scaling linearly puts the real gain near
+**+0.0014**, and the true figure is uncertain in both directions — the relationship
+need not be linear, and the week a real refit adds is the week *closest to test*,
+which the recency result prices above an average week.
+
+So the expected range is roughly **+0.0014 to +0.0035**. For scale, run 4's entire
+hard-won edge over the official baseline is +0.0021.
+
+**This reframes the whole day.** Ten modelling axes are closed with mechanisms;
+none of them moved the score. The one intervention that clearly does move it is not
+a model change at all — it is a rules question that has been sitting unanswered in
+`docs/QUESTIONS_FOR_ORGANISERS.md` all week, needs no code, and is already
+implemented behind `selection.refit_on_train_val: false`.
+
+It also completes the recency finding. Fresher data is worth about +0.0005 per day;
+recency *weighting* failed because it buys freshness by deleting rows, at a rate
+that priced out. Refitting buys the same freshness by **adding** rows, which is why
+it collects the gain instead of trading against it.
+
+**Recommendation: ask the organisers, with this measurement attached.** If the
+answer is yes, flip one config flag. If no, the number belongs in the report anyway
+— it quantifies exactly what the conservative reading cost us.
+
+`scripts/probe_refit.py` reproduces the table in about 5 minutes.
+
 ---
 
 ## 6. What did not work — twenty experiments

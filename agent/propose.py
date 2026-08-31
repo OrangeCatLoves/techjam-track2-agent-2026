@@ -237,7 +237,8 @@ row sees the whole train period:
   stats.label_rate(field)      smoothed long_view rate of this row's key,
                                from prior dates only
   stats.exposure_count(field)  how many prior impressions that key had
-  stats.global_rate()          the overall rate in window
+  stats.global_rate()          the in-window rate, one value per row (an
+                               array, not a scalar -- use it elementwise)
 
 You cannot widen that window; the labels needed to widen it are not on either
 object. Return values are bucketed by quantile, so only the ordering of your

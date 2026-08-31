@@ -338,6 +338,94 @@ targets have the *wider* spread (0.48 against 0.34 between p10 and p90). Why log
 harmless at 0.25–0.5 and collapses at 1.0 is unexplained, and is left unexplained
 here rather than given a story that the measurements do not support.
 
+### Opening the feature stage — what the agent did with a fifth tool
+
+Across the first four runs the agent proposed 22 objective changes, 4 model, 3
+sampling, 2 ensemble and **0 feature** experiments. Not because features failed —
+`harness/features/gen/` was empty, so a feature could not be expressed. It kept
+rewriting the loss because that was the only stage with an API behind it.
+
+The diagnostics had been saying the loss was not the bottleneck for some time. On
+a reference FM the two smallest fields carry by far the largest embeddings:
+
+| field | embedding norm | distinct ids | rows per id |
+|---|---|---|---|
+| dur_bucket | 1.578 | 10 | 114,111 |
+| tab | 1.315 | 15 | 76,074 |
+| user_id | 0.353 | 26,210 | 44 |
+| video_id | 0.298 | 7,538 | 151 |
+| author_id | 0.305 | 6,482 | 176 |
+
+With `k=16` a user embedding fits 17 parameters from about 44 observations. The ID
+fields are not uninformative, they are starved. The organisers' published "features
+do not help" result tested *static categoricals* — more sparse ids on a model
+already full of them — which says nothing about *causal historical* statistics.
+
+So the harness gained a fifth stage: `harness/features/`, with the causal window
+enforced by construction. Only a label-free popularity count shipped. The target
+encoding was left unwritten on purpose.
+
+**The agent found it unprompted, at iteration 3**, after two failed objectives:
+
+> Field norms say video_id 0.140 and author_id 0.141 are barely learned, while tab
+> 0.795 and dur_bucket 0.735 dominate. A causally-windowed, smoothed historical
+> long-view rate is a dense surrogate for that sparse ID: it varies within a
+> user's list, so unlike user-side fields it can reorder it.
+
+That iteration died on a harness defect, not an agent one — `stats.global_rate()`
+is documented as "the overall rate in window", which reads as a scalar, and returns
+one value per row. The generated code called `float()` on it. **The documentation
+was not corrected until the run had finished**, because editing the agent's
+interface mid-run is a manual intervention by our own definition and the
+intervention count is worth more than one salvaged iteration.
+
+At iteration 6 it came back and produced the run's best feature result, with a
+sharper argument than the first:
+
+> user_id cannot vary inside a list, so its embedding starved (0.320) while the
+> dense within-list fields absorbed everything. Back user_id off onto a dense,
+> causal user-propensity field that crosses with duration.
+
+The feature it wrote is deliberately constant within a list, and it says so in its
+own docstring: *"Constant within a list, so its first-order term is a no-op by
+construction. It is here only to be crossed."* The organisers measured that
+user-side features contribute exactly zero because nothing constant within a user
+can reorder that user's list. That holds for the **first-order** term. In a
+factorization machine such a field still acts through its *interactions* with
+fields that do vary. The agent found the loophole in a published negative result
+and built for it.
+
+| iteration | stage | result | vs baseline |
+|---|---|---|---|
+| 6 | features | **0.6017** | +0.0002 |
+| 7 | features | 0.5995 | −0.0020 |
+| 8 | ensemble | **0.6026** | +0.0011 |
+| 3 | features | failed on the harness defect above | — |
+
+**Features did not improve the score.** 0.6017 against a 0.6015 baseline is inside
+the ±0.0008 noise band, and the run's best — 0.6026, from a seed ensemble it
+rediscovered independently — is still below run 4's 0.6036. Run 4 stands.
+
+**The diagnostic is worth more than the score was.** The feature run's train/valid
+gap:
+
+```
+train primary   0.6272
+val primary     0.6017
+gap             0.0255      baseline gap: 0.0065
+```
+
+The gap quadrupled. We gave an underfitting model denser signal and it spent that
+capacity fitting training data four times harder, with validation flat. So the
+binding constraint was never the model's ability to represent item quality. Whatever
+separates April from late April is not recoverable from more expressive features —
+which is consistent with every other negative result here, and is the honest reason
+this benchmark resists movement.
+
+**Run totals:** 9 iterations, 49.2 minutes, 1 failed iteration, zero manual
+interventions. Stage usage `objective 5, features 3, ensemble 1` — against
+`features 0` in all four previous runs combined.
+
 ---
 
 ## 6. What did not work — twenty experiments

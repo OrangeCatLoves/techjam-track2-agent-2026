@@ -144,7 +144,16 @@ class CausalStats:
         return self._count[field]
 
     def global_rate(self) -> np.ndarray:
-        """The long-view rate over everything in window, per row."""
+        """Long-view rate over everything in window, as **one value per row**.
+
+        Not a scalar, despite the name. Under a causal window a train row's
+        "global" rate is the rate over the dates before it, so it genuinely
+        differs between rows; evaluation rows all share the whole-train value.
+
+        A generated feature read this as a scalar and called ``float()`` on it,
+        which cost an iteration. The array is the correct return type, so the
+        documentation is what changed -- use it elementwise, and index nothing.
+        """
         return self._global_rate
 
     def _check(self, field: str) -> None:

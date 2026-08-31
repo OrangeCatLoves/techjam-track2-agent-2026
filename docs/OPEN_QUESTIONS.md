@@ -663,3 +663,36 @@ one-word revert.
 
 Set by the team, not confirmed by the organisers. All remaining planning is against
 this. Still in the question list for written confirmation, including timezone.
+
+### D22 - `play_time_ms` may be a training target, never an input (team decision, 31 Aug)
+
+Two lines of CLAUDE.md pull against each other:
+
+- **section 3.1** - "`play_time_ms` is never loaded by the kit; keep it that way."
+- **section 7.2** - the outcome columns "are legitimate as auxiliary training
+  targets in a multi-task setup. They are never inputs."
+
+**The reading taken.** Section 3.1 guards against the column becoming a *feature*,
+which would be a direct label leak, since `long_view` is very nearly a function of
+`play_time_ms` and `duration_ms` - measured at 97.81% reproducible from the stated
+rule, so not even a clean one. Section 7.2 governs its use as a *target*. Loading it
+to supervise training is therefore permitted; loading it to featurise a row is not.
+
+**What this licenses**, and nothing wider:
+
+- train rows only. Valid and test watch times are never read.
+- targets only. Nothing derived from it reaches a feature vector.
+- outside `harness/`. The code lives in `scripts/probe_watchtime.py`, which is not on
+  the agent's import surface, so a generated patch cannot reach it.
+
+**Why it was not put in `harness/`.** That would place a label-adjacent column one
+import away from feature code, and the agent writes feature code. The cost of keeping
+it in `scripts/` is that a future multi-task build must move it deliberately and
+argue the case again. That friction is the point.
+
+**Status of the experiment it was raised for:** measured and negative. See
+`RESULTS.md` section 5. The decision stands regardless of the outcome, because it is
+about what is permitted rather than about what worked.
+
+**Worth an organiser ruling**, though a conservative one: we have used the column
+only to *supervise*, and the result was that it did not help.

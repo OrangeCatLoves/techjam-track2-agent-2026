@@ -272,6 +272,72 @@ model configuration, which widens the space the agent can propose in, and the
 diagnostics now report `mean_pairwise_rank_corr`, the number that predicts whether
 adding a member can help at all.
 
+### Does watch time carry ranking signal the label throws away?
+
+Reference [4] in the organisers' problem statement is CWM (Zhao et al., KDD 2024),
+whose idea is that watch time is *censored*: when a user finishes a video you learn
+only that they wanted at least that much, so a one-sided loss beats squared error.
+
+That pointed at something we were discarding. `long_view` is one bit, but the file
+also carries `play_time_ms`, and inside our 756,991 negative rows the spread is
+enormous — a median of 2,027 ms, a p90 of 9,726 ms, 42% of them under a tenth of the
+long-view bar and 4.4% at 80–100% of it. The model sees all of those as the same
+row, and the model is known to be *underfitting*, so more signal per row is the right
+class of medicine.
+
+CLAUDE.md §7.2 permits an outcome column as an auxiliary training **target** and
+forbids it as an input. §3.1 says the kit never loads `play_time_ms` and to keep it
+that way. Read together: as a target, train rows only, never a feature, never test.
+Recorded as **D22**.
+
+Before building CWM's censored loss and a multi-task head — three hours — the premise
+was tested for about twenty-five minutes. Keep the FM identical and change only the
+training target: a positive keeps its 1.0, a negative is graded by how close it came,
+capped strictly below 1.0 so it can never present as a positive. `alpha` scales the
+graded band, so **alpha = 0 is the untouched binary label and therefore the control**.
+Validation is scored against the real `long_view` labels throughout.
+
+| target | val primary | GAUC | nDCG@5 | vs control |
+|---|---|---|---|---|
+| log a=0.25 | 0.6017 | 0.6674 | 0.5360 | +0.0002 |
+| log a=0.5 | 0.6016 | 0.6668 | 0.5363 | +0.0001 |
+| **binary (control)** | **0.6015** | **0.6671** | **0.5358** | — |
+| linear a=0.25 | 0.6001 | 0.6649 | 0.5354 | −0.0014 |
+| linear a=0.5 | 0.5944 | 0.6576 | 0.5312 | −0.0071 |
+| linear a=1.0 | 0.5828 | 0.6420 | 0.5235 | −0.0187 |
+| log a=1.0 | 0.5741 | 0.6295 | 0.5188 | −0.0273 |
+
+**Nothing beat the control.** The best outcome was a tie: +0.0002 and +0.0001 are
+inside the ±0.0008 single-seed noise band. The linear family degrades monotonically
+with dose, which makes this a dose-response curve rather than seven noisy draws.
+
+The damage is concentrated where the mechanism predicts. Across the linear family
+GAUC falls 0.0251 while nDCG@5 falls 0.0123 — **twice as much harm to GAUC**. GAUC is
+exactly the measure of whether positives outrank negatives within a user, and grading
+a near-miss negative upward tells the model to rank it nearer the positives. At
+evaluation that row is still a negative and still has to sit below them. So the
+graded target is not merely uninformative, it is pointed the wrong way.
+
+Two guards made the result trustworthy rather than a plumbing artefact. The watch
+times were aligned to the split rows field by field on all 1,141,112 of them, not
+sampled. And the retargeting path at alpha = 0 reproduces 0.6015 bit-identically to
+the untouched pipeline, so any movement is the target and not the mechanism.
+
+**Read:** the cheapest form of the idea shows zero, so the expensive form does not
+earn three hours. This does not disprove CWM — we borrowed its target, not its
+censored likelihood, and the paper optimises watch-time prediction while we are
+scored on within-user `long_view` ranking. It does say the graded target carries no
+ranking signal our binary label was missing, which was the premise the whole build
+rested on. `scripts/probe_watchtime.py` reproduces the table.
+
+One honest note on process: the prediction going in was that the log scale would be
+*worse* than linear at matched alpha, because it assigns negatives higher targets.
+It was not — log is inert at low dose where linear already hurts. The follow-up
+theory, that log compresses the signal to near-constant, was also wrong: the log
+targets have the *wider* spread (0.48 against 0.34 between p10 and p90). Why log is
+harmless at 0.25–0.5 and collapses at 1.0 is unexplained, and is left unexplained
+here rather than given a story that the measurements do not support.
+
 ---
 
 ## 6. What did not work — twenty experiments

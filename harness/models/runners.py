@@ -137,22 +137,63 @@ PluggableFM = _build_pluggable_fm()
 # grouping
 # --------------------------------------------------------------------------
 
+#: Target list length for ``eval_matched`` grouping. The evaluation splits average
+#: 5.58 (valid) and 7.15 (test) impressions per user, so six is the midpoint of
+#: what the model is actually scored on.
+EVAL_LIST_TARGET = 6
+
+#: Span, in days, that an ``eval_matched`` list may draw from. The validation
+#: split is seven days long and a user's list is composed from across all of it.
+EVAL_WINDOW_DAYS = 7
+
+
 def build_groups(splits: Dict[str, list], split: str,
                  group_by: str = 'user_id') -> np.ndarray:
     """Integer group id per row, defining the ranking lists for a listwise loss.
 
-    ``user_id`` gives ~42 rows per list on train; ``user_id+date`` gives ~3. The
-    evaluation lists are ~6, so neither matches, and which is better is a genuine
-    experiment rather than something to guess. See CLAUDE.md section 9.2.
+    Three groupings, and the difference between them is not just list length:
+
+    ``user_id``        every impression a user has, ~43.5 rows on train.
+    ``user_id+date``   one user's single day, mean 5.77 rows.
+    ``eval_matched``   ~6 rows drawn from across a seven-day window.
+
+    ``user_id+date`` was adopted because its mean list length, 5.77, is close to
+    validation's 5.58. That matches the *size* of an evaluation list and not its
+    *shape*. Measured:
+
+        split   per user   per user-day
+        train     43.54        5.77
+        valid      5.58        1.95
+        test       7.15        1.93
+
+    A validation list is one user's ~5.6 impressions spread over seven days, at
+    roughly two a day. A ``user_id+date`` training list is ~5.8 impressions from a
+    single session. The model is taught to rank within a session and then scored
+    on ranking across a week, and every ranking objective tried so far was trained
+    on one of the two mismatched groupings.
+
+    ``eval_matched`` closes that gap. The period is tiled into seven-day windows;
+    within each window a user's rows are sorted by date and dealt round-robin into
+    ``round(n / 6)`` lists, so each list holds about six impressions spread across
+    several days rather than six from one. Dealing rather than slicing is the
+    point: a contiguous slice of a date-sorted history is a single day again.
+
+    No row is dropped and no row appears twice, so this changes list composition
+    without changing what the model sees.
+
+    A pointwise loss ignores grouping entirely, so this only moves anything in
+    combination with a pairwise or listwise objective.
     """
     rows = splits[split]
     if group_by == 'user_id':
-        keys = [r[hdata.IDX_USER] for r in rows]
+        keys: List[Any] = [r[hdata.IDX_USER] for r in rows]
     elif group_by == 'user_id+date':
         keys = [(r[hdata.IDX_USER], r[hdata.IDX_DATE]) for r in rows]
+    elif group_by == 'eval_matched':
+        return _eval_matched_groups(rows)
     else:
-        raise ValueError(f'unknown group_by {group_by!r}; '
-                         f"choose 'user_id' or 'user_id+date'")
+        raise ValueError(f'unknown group_by {group_by!r}; choose '
+                         f"'user_id', 'user_id+date' or 'eval_matched'")
     index: Dict[Any, int] = {}
     out = np.empty(len(keys), dtype=np.int64)
     for i, key in enumerate(keys):
@@ -161,6 +202,45 @@ def build_groups(splits: Dict[str, list], split: str,
             gid = index[key] = len(index)
         out[i] = gid
     return out
+
+
+def _eval_matched_groups(rows: Sequence[tuple]) -> np.ndarray:
+    """Lists of ~6 impressions spread across a seven-day window. See build_groups.
+
+    Deterministic: rows are ordered by (date, original position) before dealing,
+    so the same split always yields the same lists with no RNG involved.
+    """
+    if not rows:
+        return np.empty(0, dtype=np.int64)
+
+    first_date = min(r[hdata.IDX_DATE] for r in rows)
+    base = _day_number(first_date)
+
+    buckets: Dict[Any, List[int]] = {}
+    for i, r in enumerate(rows):
+        window = (_day_number(r[hdata.IDX_DATE]) - base) // EVAL_WINDOW_DAYS
+        buckets.setdefault((r[hdata.IDX_USER], window), []).append(i)
+
+    out = np.empty(len(rows), dtype=np.int64)
+    next_gid = 0
+    for key in sorted(buckets, key=lambda k: (str(k[0]), k[1])):
+        idx = sorted(buckets[key], key=lambda i: (rows[i][hdata.IDX_DATE], i))
+        n_lists = max(1, int(round(len(idx) / EVAL_LIST_TARGET)))
+        for position, row_i in enumerate(idx):
+            out[row_i] = next_gid + (position % n_lists)
+        next_gid += n_lists
+    return out
+
+
+def _day_number(date: int) -> int:
+    """Days since epoch for a YYYYMMDD integer, so windows span month boundaries.
+
+    The train period ends on 20220421 and evaluation runs into May, so arithmetic
+    on the raw integer would make 20220501 look 80 days after 20220421.
+    """
+    import datetime
+    d = datetime.date(date // 10000, (date // 100) % 100, date % 100)
+    return d.toordinal()
 
 
 # --------------------------------------------------------------------------

@@ -494,6 +494,84 @@ winner, which was the point, but not the only one.
 
 `scripts/probe_snapshots.py` reproduces the table in about 13 minutes.
 
+### List shape — the last theory for why 43 ranking objectives failed
+
+Every ranking objective the agent ever wrote was trained on one of two groupings:
+`user_id`, at 43.5 rows per list, or `user_id+date`, at 5.77. The second was
+adopted because 5.77 is close to validation's 5.58. That matches an evaluation
+list's **size**. Measured, it does not match its **shape**:
+
+| grouping | lists | mean size | median | distinct days per list |
+|---|---|---|---|---|
+| `user_id` | 26,210 | 43.54 | 31.0 | 7.64 |
+| `user_id+date` | 197,796 | 5.77 | 3.0 | **1.00** |
+| `eval_matched` | 198,247 | 5.76 | 6.0 | 3.89 |
+| **valid (scored)** | 22,377 | **5.58** | 4.0 | **3.02** |
+
+A `user_id+date` list is a single session. A scored list is ~5.6 impressions
+spread across ~3 days of a 7-day window. So every ranking loss was taught to rank
+within a session and then scored on ranking across a week.
+
+`eval_matched` (`harness/models/runners.py`) closes that: the period is tiled into
+seven-day windows, and within each window a user's date-sorted rows are dealt
+round-robin into `round(n/6)` lists. Dealing rather than slicing is the point — a
+contiguous slice of a date-sorted history is a single day again. No row is dropped
+or duplicated.
+
+It also fixes a second problem. A single-class list gives a ranking loss no
+gradient at all:
+
+| grouping | mixed-class lists | rows in a usable list |
+|---|---|---|
+| `user_id` | 92.7% | 99.0% |
+| `user_id+date` | **49.3%** | 80.7% |
+| `eval_matched` | 77.4% | 79.5% |
+
+**Under the grouping the agent settled on, more than half of all training lists
+were dead weight.** `eval_matched` raises that to 77.4% at the same row coverage.
+
+Three deterministic agent-written losses, imported from their own run patches so
+only the grouping varies:
+
+| loss | `user_id` | `user_id+date` | `eval_matched` |
+|---|---|---|---|
+| pairwise BPR | **0.6010** | 0.5948 | 0.5907 |
+| listwise softmax | **0.6008** | 0.5945 | 0.5957 |
+| lambdarank nDCG | **0.6003** | 0.5940 | 0.5896 |
+| *pointwise control* | | | **0.6015** |
+
+**The hypothesis was wrong, and wrong in an informative direction.** Matching the
+evaluation list's shape *lost* to the best existing grouping in all three cases:
+−0.0103, −0.0051, −0.0106. It beat single-day lists for listwise softmax only.
+
+Two explanations are ruled out by these numbers. It is not dead gradient:
+`eval_matched` has 28 points more usable lists than `user_id+date` and still loses
+on two of three losses. And it is not list shape: shape was corrected and nothing
+improved.
+
+What tracks the score is plain **list length** — the 43-row grouping wins for all
+three objectives — and the previously reported advantage of `user_id+date` over
+`user_id` does not survive a controlled comparison. Longer lists give more pairs
+and a lower-variance gradient per list, and that outweighs any resemblance to the
+thing being scored.
+
+**The strongest statement here is the negative one.** Across 3 losses x 3
+groupings, plus 43 agent iterations, **no ranking objective on any list
+construction has ever beaten pointwise logloss.** The best of the nine is 0.6010
+against a 0.6015 control. List construction was the last untested explanation for
+that, and it is now tested and rejected. The objective axis is closed on evidence
+rather than on exhaustion.
+
+`scripts/probe_list_shape.py` reproduces the tables in about 29 minutes.
+
+**Incidental finding.** `harness.losses.check_loss` calls a loss twice and compares,
+so it is unreliable for a *stochastic* loss. The BPR at
+`runs/agent-explore/patches/iter_001.py` resamples its negatives each call and is
+rejected as sign-inverted, though it trained fine in the agent's own run — it
+passed there by luck of the RNG state. Not fixed here, and it has never produced a
+wrong score; but a resampling objective can be rejected at random, which is worth
+knowing before someone debugs the loss instead of the check.
+
 ---
 
 ## 6. What did not work — twenty experiments

@@ -678,6 +678,71 @@ most of the learnable signal.
 columns are read for train rows only and never reach a feature vector, per
 CLAUDE.md section 7.2 and decision D22.
 
+### A GBDT on the causal features — the first genuinely diverse blend member
+
+CLAUDE.md section 9.3 calls a gradient-boosted tree a trap here, and the reasoning
+is right: a tree cannot split on 27,285 users crossed with 7,538 videos, which is
+what the FM's embeddings represent. **But that objection is about IDs.** Now that
+`harness/features/` exists the same information is available as dense causal
+statistics, which is the representation a tree handles best. So the trap argument
+does not apply to what it was actually fed.
+
+Fourteen features through the tested causal window: historical long-view rate and
+log exposure count for each of the five key fields, the global rate, log duration,
+duration against the user's own slate, and slate size.
+
+**The tree alone: 0.5975** from 273 trees, having never seen a user or video id.
+Below the FM's 0.6015, but far above item popularity at 0.5807. Its own ranking of
+what mattered:
+
+```
+rate_user_id     632,945        log_duration      93,861
+rate_tab         622,553        rate_author_id    66,011
+rate_video_id    252,122        logexp_user_id    50,943
+logexp_tab       156,945        slate_size        48,914
+```
+
+**The number that matters is the agreement.**
+
+```
+FM vs GBDT                0.7877
+5 FM seeds vs each other  ~0.90
+```
+
+Three previous attempts at blend diversity — model-config variation, heterogeneous
+batches, snapshots — all failed the same way: every new member was *worse* rather
+than differently right. **This is the first member that is both comparably good
+and genuinely differently wrong.** 0.79 against 0.90 is the largest disagreement
+any member has ever brought.
+
+| blend | val primary | vs base |
+|---|---|---|
+| FM alone | 0.6015 | — |
+| FM + GBDT, tree weight 0.2 | 0.6018 | +0.0003 |
+| **FM + GBDT, tree weight 0.3** | **0.6021** | **+0.0006** |
+| FM + GBDT, tree weight 0.5 | 0.6012 | −0.0003 |
+| 5-seed ensemble alone | 0.6030 | — |
+| **5-seed ensemble + GBDT, weight 0.3** | **0.6035** | **+0.0005** |
+
+**It gains, and the gain is inside the noise band.** +0.0005 and +0.0006 against a
++/-0.0008 seed noise floor. Two things stop this being a result:
+
+1. **The weight was chosen on validation.** Five weights were tried and the best
+   kept, which is selection on the number being reported. CLAUDE.md section 9.5
+   warns about exactly this. The honest expectation on unseen data is below
+   +0.0005.
+2. **It does not clear the bar.** 0.6035 is under run 4's confirmed 0.6036, and
+   nowhere near the +0.002 needed to replace it.
+
+**Run 4 stands.** But this is the first positive direction in roughly thirty
+experiments, and the mechanism is now identified rather than guessed: what a blend
+needed was a *different model family*, not a differently-tuned copy of the same
+one. Three failed diversity experiments were all searching inside one family. With
+more time the honest next step is confirmation across independent seed sets and a
+weight fixed in advance rather than tuned.
+
+`scripts/probe_gbdt.py` reproduces the table in about 6 minutes.
+
 ---
 
 ## 6. What did not work — twenty experiments

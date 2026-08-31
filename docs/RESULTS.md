@@ -626,6 +626,58 @@ collect the +0.0029 rather than trade against it. That is Q2 in
 
 `scripts/probe_recency.py` reproduces both parts in about 12 minutes.
 
+### Multi-task auxiliary heads — no gain, monotone decline
+
+The features result argued *against* capacity: given denser signal the model took
+its train/valid gap from 0.0065 to 0.0255 with validation flat. Auxiliary heads
+are the opposite intervention. They do not widen the model; they force one shared
+embedding table to explain clicks and likes as well as long views, which is a
+constraint. That made this the only remaining build whose mechanism our own
+evidence did not already contradict.
+
+Usable auxiliary signals, from the train period:
+
+| column | positive rate | corr with `long_view` |
+|---|---|---|
+| `is_click` | 0.4634 | **0.7605** |
+| `is_profile_enter` | 0.0254 | — |
+| `is_like` | 0.0187 | — |
+| `is_follow` / `is_comment` / `is_forward` / `is_hate` | <= 0.0026 | too sparse to use |
+
+`is_click` is the interesting one: dense, and correlated 0.76 with the label —
+closely related without being the same thing, which is what a good auxiliary task
+looks like.
+
+Architecture: one shared embedding table, and per task a private linear head plus
+a scalar gain on the interaction term. Every task's gradient reaches the shared
+table; only the main head is scored.
+
+    loss = logloss(long_view) + lam * mean_t logloss(aux_t)
+
+`lam = 0` makes the auxiliary heads inert and reproduces the reference FM at
+0.6014 against 0.6015, which is what licenses reading anything into the rest.
+
+| lam | val primary | vs control |
+|---|---|---|
+| **0.0 (control, aux inert)** | **0.6014** | — |
+| 0.1 | 0.6015 | +0.0001 |
+| 0.3 | 0.6008 | −0.0006 |
+| 1.0 | 0.6008 | −0.0006 |
+| 3.0 | 0.5994 | −0.0020 |
+
+**No gain, and a monotone decline with dose** — the same shape as the watch-time
+target sweep, which makes it a dose-response curve rather than five noisy draws.
+
+The likely reading is that `is_click` at 0.76 correlation carries almost nothing
+the label does not already carry, so the auxiliary gradient competes for the same
+embedding capacity instead of constraining it usefully. That is consistent with
+the organisers' own finding that the `user_id x video_id` cross already absorbs
+most of the learnable signal.
+
+`scripts/probe_multitask.py` reproduces the table in about 10 minutes. Outcome
+columns are read for train rows only and never reach a feature vector, per
+CLAUDE.md section 7.2 and decision D22.
+
 ---
 
 ## 6. What did not work — twenty experiments

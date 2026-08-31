@@ -572,6 +572,60 @@ passed there by luck of the RNG state. Not fixed here, and it has never produced
 wrong score; but a resampling objective can be rejected at random, which is worth
 knowing before someone debugs the loss instead of the check.
 
+### Temporal drift is real, and recency weighting cannot exploit it
+
+Of 56 agent iterations, three targeted sampling and **none** touched time. Train
+is 8-21 April, validation 22-28 April, test 29 April - 8 May, so if the signal
+drifts, rows nearer the boundary are worth more.
+
+**Part A, the diagnostic.** Train on the early half of the period, then the late
+half, row counts matched so the comparison is recency and not volume. Each arm
+kept contiguous in time.
+
+| arm | rows | val primary |
+|---|---|---|
+| early half (< 20220415) | 249,694 | 0.5893 |
+| **late half (>= 20220415)** | 249,694 | **0.5922** |
+
+**+0.0029 for data roughly a week fresher**, about 3.5x the noise band. Drift is
+real and measurable. This is the first positive diagnostic in the project.
+
+**Part B, the method.** Resample the full training set with weight
+`2^(-age/half_life)`, row count held constant. The control is uniform weights run
+through the *same* resampling path, so only the weighting differs. It scores
+0.5973 rather than 0.6015 because sampling with replacement discards about a third
+of unique rows -- which is exactly the cost being measured.
+
+| weighting | mean row age | val primary | vs control |
+|---|---|---|---|
+| **uniform (control)** | 8.45 d | **0.5973** | — |
+| half-life 14 d | 8.03 d | 0.5959 | −0.0014 |
+| half-life 7 d | 7.53 d | 0.5973 | 0.0000 |
+| half-life 3 d | 5.91 d | 0.5960 | −0.0013 |
+| half-life 1.5 d | 3.09 d | 0.5904 | −0.0069 |
+
+**Nothing beats uniform.** And the mean-age column says why, quantitatively.
+
+The training period is severely front-loaded: 891,418 rows in the first seven days
+against 249,694 in the last six. So reweighting barely moves the distribution.
+Even a 1.5-day half-life only takes the mean row age from 8.45 days to 3.09 --
+about the same freshness gap Part A measured as worth **+0.0029** -- while costing
+**−0.0069**, because concentrating the sample on recent days throws away unique
+rows faster than recency repays them.
+
+**The trade is quantified and it is unfavourable by more than a factor of two.**
+Recency is worth roughly +0.0005 per day of freshness; buying that freshness by
+discarding old rows costs more than it returns at every setting tried.
+
+**This is the one result today that strengthens the case for something else.**
+Drift is real, so fresher data does help -- the problem is only that reweighting
+buys freshness by *deleting* data. **Refitting on train + validation adds a week of
+the freshest data available without deleting anything**, which is the one way to
+collect the +0.0029 rather than trade against it. That is Q2 in
+`docs/QUESTIONS_FOR_ORGANISERS.md`, still unanswered, still costing nothing to ask.
+
+`scripts/probe_recency.py` reproduces both parts in about 12 minutes.
+
 ---
 
 ## 6. What did not work — twenty experiments

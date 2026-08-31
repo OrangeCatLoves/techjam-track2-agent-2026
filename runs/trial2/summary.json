@@ -1,0 +1,64 @@
+{
+  "run_id": "swetha-2",
+  "converged": true,
+  "reason": "no_improvement",
+  "iterations": 5,
+  "best_val_primary": 0.6020388494156208,
+  "ledger": {
+    "run_id": "swetha-2",
+    "run_dir": "runs\\swetha-2",
+    "records": 5,
+    "kept": 3,
+    "rejected": 2,
+    "failed": 0,
+    "best_iteration": 3,
+    "best_val_primary": 0.6020388494156208,
+    "best_flagged_for_review": false,
+    "canary_trips": 0,
+    "review_flags": 0
+  },
+  "submission": {
+    "written": true,
+    "path": "runs\\swetha-2\\submission.csv",
+    "rows": 170588,
+    "from_iteration": 3,
+    "val_primary": 0.6020388494156208,
+    "flagged_for_review": false
+  },
+  "usage": {
+    "input": 0,
+    "output": 0,
+    "total": 0,
+    "limit": 2000000,
+    "remaining": 2000000,
+    "calls": 0,
+    "failed_calls": 0,
+    "estimated_calls": 0,
+    "by_model": {},
+    "provider": "claude_cli",
+    "models": {
+      "fast": "claude-haiku-4-5-20251001",
+      "strong": "claude-opus-5"
+    },
+    "note": "0 of 0 call(s) had their token count estimated from prompt length because the request failed before reporting usage. Estimates can only overstate."
+  },
+  "resources": {
+    "run_id": "swetha-2",
+    "iterations_used": 5,
+    "iterations_cap": 50,
+    "wall_clock_hours": 0.233,
+    "tokens": {
+      "input": 340677,
+      "output": 27260,
+      "total": 367937
+    },
+    "gpu_hours": 0.0,
+    "manual_interventions": 0,
+    "operational_restarts": 1,
+    "recovery_events": 3,
+    "canary_trips": 0,
+    "review_flags": 0,
+    "intervention_definition": "a human changing the agent instructions, objective or search space. Restarting a crashed process is operational recovery and is counted separately."
+  },
+  "review_required": []
+}

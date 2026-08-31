@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "run_id": "038eb72b74ea",
+  "rule": {
+    "epsilon": 0.002,
+    "n_consecutive": 3,
+    "max_iterations": 50,
+    "max_wall_clock_hours": 6.0,
+    "comparison": "block",
+    "allow_early_stop": false
+  },
+  "iteration": 6,
+  "failed_iterations": 0,
+  "strikes": 3,
+  "best_primary": 0.6019552430716881,
+  "best_iteration": 6,
+  "best_ref": "runs\\swetha-1\\checkpoints\\iter_006.npz",
+  "elapsed_seconds": 2005.5649804999994,
+  "converged": true,
+  "converged_reason": "no_improvement",
+  "converged_at_iteration": 6,
+  "history": [
+    {
+      "iteration": 1,
+      "status": "ok",
+      "primary": 0.5905605677545034,
+      "best_before": null,
+      "gain": null,
+      "strike": false,
+      "content_hash": "0c4c8216ccdf3d3a",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 2,
+      "status": "ok",
+      "primary": 0.5902089672039672,
+      "best_before": 0.5905605677545034,
+      "gain": -0.00035160055053617967,
+      "strike": true,
+      "content_hash": "b52c8984160424ea",
+      "meta": {}
+    },
+    {
+      "iteration": 3,
+      "status": "ok",
+      "primary": 0.6016607718633721,
+      "best_before": 0.5905605677545034,
+      "gain": 0.011100204108868694,
+      "strike": false,
+      "content_hash": "fe2a1ccdd243da8c",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 4,
+      "status": "ok",
+      "primary": 0.5982103371763934,
+      "best_before": 0.6016607718633721,
+      "gain": -0.0034504346869786984,
+      "strike": true,
+      "content_hash": "c56e0bea6d096d07",
+      "meta": {}
+    },
+    {
+      "iteration": 5,
+      "status": "ok",
+      "primary": 0.6011505346591086,
+      "best_before": 0.6016607718633721,
+      "gain": -0.000510237204263464,
+      "strike": true,
+      "content_hash": "347f00fc8a9cd708",
+      "meta": {}
+    },
+    {
+      "iteration": 6,
+      "status": "ok",
+      "primary": 0.6019552430716881,
+      "best_before": 0.6016607718633721,
+      "gain": 0.00029447120831604945,
+      "strike": true,
+      "content_hash": "2e33d31713e0f9d7",
+      "meta": {},
+      "new_best": true
+    }
+  ],
+  "tried": [
+    "0c4c8216ccdf3d3a",
+    "b52c8984160424ea",
+    "fe2a1ccdd243da8c",
+    "c56e0bea6d096d07",
+    "347f00fc8a9cd708",
+    "2e33d31713e0f9d7"
+  ]
+}

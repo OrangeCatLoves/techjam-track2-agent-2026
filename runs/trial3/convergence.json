@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "run_id": "87af8306215a",
+  "rule": {
+    "epsilon": 0.002,
+    "n_consecutive": 3,
+    "max_iterations": 50,
+    "max_wall_clock_hours": 6.0,
+    "comparison": "block",
+    "allow_early_stop": false
+  },
+  "iteration": 6,
+  "failed_iterations": 0,
+  "strikes": 3,
+  "best_primary": 0.6019552430716881,
+  "best_iteration": 4,
+  "best_ref": "runs\\swetha-3\\checkpoints\\iter_004.npz",
+  "elapsed_seconds": 1415.2601167,
+  "converged": true,
+  "converged_reason": "no_improvement",
+  "converged_at_iteration": 6,
+  "history": [
+    {
+      "iteration": 1,
+      "status": "ok",
+      "primary": 0.5804260189692831,
+      "best_before": null,
+      "gain": null,
+      "strike": false,
+      "content_hash": "8cff91710835eae8",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 2,
+      "status": "ok",
+      "primary": 0.5868710267369975,
+      "best_before": 0.5804260189692831,
+      "gain": 0.006445007767714395,
+      "strike": false,
+      "content_hash": "ac57aa2b96db3a88",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 3,
+      "status": "ok",
+      "primary": 0.6011221803841452,
+      "best_before": 0.5868710267369975,
+      "gain": 0.014251153647147685,
+      "strike": false,
+      "content_hash": "2da34388b58f71f6",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 4,
+      "status": "ok",
+      "primary": 0.6019552430716881,
+      "best_before": 0.6011221803841452,
+      "gain": 0.000833062687542907,
+      "strike": true,
+      "content_hash": "b57c30423ea39565",
+      "meta": {},
+      "new_best": true
+    },
+    {
+      "iteration": 5,
+      "status": "ok",
+      "primary": 0.598427345504744,
+      "best_before": 0.6019552430716881,
+      "gain": -0.0035278975669441603,
+      "strike": true,
+      "content_hash": "34992824541307ad",
+      "meta": {}
+    },
+    {
+      "iteration": 6,
+      "status": "ok",
+      "primary": 0.5988029959086314,
+      "best_before": 0.6019552430716881,
+      "gain": -0.0031522471630567317,
+      "strike": true,
+      "content_hash": "90cbf9fb10e58b4e",
+      "meta": {}
+    }
+  ],
+  "tried": [
+    "8cff91710835eae8",
+    "ac57aa2b96db3a88",
+    "2da34388b58f71f6",
+    "b57c30423ea39565",
+    "34992824541307ad",
+    "90cbf9fb10e58b4e"
+  ]
+}

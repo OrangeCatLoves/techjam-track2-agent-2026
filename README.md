@@ -368,16 +368,9 @@ features turned out to be the first genuinely diverse blend member we found
 
 ---
 
-## Team contributions
+## Tooling disclosure
 
-<!-- ONLY REMAINING GAP: replace the two names. The work split is accurate. -->
-
-| Member | Owned |
-|---|---|
-| *<name 1>* | Harness and safety (`harness/`, `tests/`), the agent loop (`agent/`), the causal feature stage, the experiment probes in `scripts/`, `docs/RESULTS.md` and `docs/OPEN_QUESTIONS.md`. |
-| *<name 2>* | Independent agent runs and ablations (`runs/trial*`, `docs/RESULTS_teammate.md`), the ensembling findings on member count, batch size and heterogeneous mixing, and the writeups. |
-
-**Tooling disclosure.** The harness, tests and documentation were written with Claude
+The harness, tests and documentation were written with Claude
 Code. The *experiments* — the loss functions, features and model changes that produced
 the scored result — were designed and coded by the agent itself, and its reasoning is
 quoted verbatim in `docs/RESULTS.md`. The distinction is the substance of this

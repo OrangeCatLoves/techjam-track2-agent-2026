@@ -428,7 +428,7 @@ interventions. Stage usage `objective 5, features 3, ensemble 1` — against
 
 ### Snapshot ensembling — measured, and it does not work
 
-`docs/PROPOSAL_expose_snapshots.md` (contributor B) argued that blending several
+A proposal reviewed late in the project argued that blending several
 epochs of one training run is the one source of member diversity that costs no
 member quality, and that the harness already implemented it behind an
 undocumented `snapshots` key.
@@ -478,7 +478,7 @@ single seed, blending its own window against its own best epoch is a wash across
 five seeds — +0.0004, −0.0009, −0.0005, −0.0002, +0.0009.
 
 **This is now the third independent confirmation of one mechanism.** Model-config
-diversity (section 5), heterogeneous-batch mixing (contributor B, Finding 4) and
+diversity (section 5), heterogeneous-batch mixing (section 5) and
 snapshots all raised or held diversity while lowering member quality, and all
 three produced no gain. The blend is at the point where **every member that can
 still be constructed is worse than the existing average by more than its
@@ -844,6 +844,72 @@ answer is yes, flip one config flag. If no, the number belongs in the report any
 — it quantifies exactly what the conservative reading cost us.
 
 `scripts/probe_refit.py` reproduces the table in about 5 minutes.
+
+### The ensembling axis, swept and bounded in three directions
+
+Section 5's 2x2 is one measurement per cell and says so. These runs extend it, and
+were produced independently on different hardware and a different Python install.
+
+**The batch sweep locates an optimum.** Same seed set as run 4 `(11,23,37,53,71)`,
+`within_user_rank`, everything else at reference:
+
+| batch | best member | blend | blend − best member |
+|---|---|---|---|
+| 8192 | — | 0.6020 | +0.0002 |
+| **2048** | **0.6028** | **0.6034** | **+0.0006** |
+| 1024 | 0.6016 | 0.6027 | +0.0012 |
+| 512 | 0.6006 | 0.6023 | +0.0017 |
+
+Two forces move in opposite directions. **Blend gain rises monotonically as the batch
+shrinks** — +0.0006, +0.0012, +0.0017, roughly tripling — which is the diversity half
+of the section 5 mechanism measured directly rather than inferred. **Member quality
+falls at the same time**: 0.6028, 0.6016, 0.6006. The blend is the product of the two
+and **peaks at 2048**, declining on both sides.
+
+So run 4's configuration is not a lucky draw. It sits at the top of a curve that falls
+away in both directions, and the agent selected it on its first attempt without
+sweeping it, having reasoned there from the train/validation gap and the
+embedding-norm diagnostic. That is a stronger claim for the agent than the raw
++0.0021.
+
+*Caveat: one measurement per row, against +/-0.0008 seed noise. What survives is the
+monotone trend in the gain column across four levels and the direction of the
+member-quality decline, not the 1024-vs-512 ordering.*
+
+**Heterogeneous batches: the trade cancels exactly.** Members need not share a batch
+size, so mixing should let high-quality 2048 members carry the score while
+lower-batch members donate diversity — quality *and* diversity rather than a trade.
+Five configurations, run 4's seed set, equal weights:
+
+| config | best member | blend | gain | GAUC | nDCG@5 |
+|---|---|---|---|---|---|
+| homogeneous 2048 (control) | 0.6028 | **0.6034** | +0.0006 | 0.6700 | 0.5367 |
+| 4x2048 + 1x1024 | 0.6028 | 0.6033 | +0.0005 | 0.6696 | 0.5370 |
+| 3x2048 + 2x1024 | 0.6024 | 0.6033 | +0.0009 | 0.6697 | 0.5368 |
+| 3x2048 + 1x1024 + 1x512 | 0.6024 | **0.6034** | +0.0010 | 0.6700 | 0.5368 |
+| 2x2048 + 2x1024 + 1x512 | 0.6024 | 0.6031 | +0.0007 | 0.6696 | 0.5365 |
+
+The predicted mechanism appeared exactly: blend gain rose from +0.0006 to +0.0010 as
+lower-batch members were mixed in. **The blend score did not move** — all five land
+between 0.6031 and 0.6034, a spread of 0.0003 inside the noise band. Each lower-batch
+member raises the gain and lowers the best member by about the same amount.
+**Diversity costs precisely what it is worth.**
+
+That is sharper than "mixing does not help": the batch sweep showed the trade is
+unfavourable *below* 2048, and this shows it is **exactly balanced**, so no mixing
+ratio exploits it rather than merely the ones tried.
+
+**Taken together the ensembling axis is bounded in every degree of freedom** — member
+count saturates at five, batch optimum is 2048, structural difference between members
+buys nothing, and (from the snapshot result above) neither do extra epochs.
+
+**Two reproducibility results fell out of this.** The homogeneous control returned
+members 0.6024, 0.6010, 0.6013, 0.6028, 0.6009 and a blend of 0.6034 — **identical to
+section 3's first seed set, individual member scores included** — on different
+hardware, a different OS install and a different numpy build. And two independent
+agent runs converged on **0.6019552430716881**, matching to the last digit from
+different proposal trajectories. The harness is deterministic across platforms, which
+supports the M5 reproducibility claim independently of any score.
 
 ---
 

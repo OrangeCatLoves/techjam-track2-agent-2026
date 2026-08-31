@@ -212,6 +212,18 @@ costs roughly 25–50 minutes and ~240k tokens against your own subscription.
 re-derives its approach each time and usually opens with pairwise BPR, which fails.
 That is the design, not a defect — see `docs/RESULTS.md`.
 
+### Watching one LLM call
+
+If you want to see what the agent actually sends and receives, without a full run:
+
+```
+python scripts/first_contact.py --analyse           # propose only
+python scripts/first_contact.py --analyse --train   # propose, then run the patch
+```
+
+It dumps the prompt, the response and the generated patch to disk for reading. Needs
+a Claude Code subscription.
+
 ### The individual findings
 
 Each is a standalone script that prints its own table and needs no LLM:
@@ -227,8 +239,36 @@ python scripts/probe_multitask.py      # auxiliary heads do not help
 python scripts/probe_covisitation.py   # co-visitation is redundant with the FM cross
 ```
 
-Run logs are at `runs/<run_id>/log.md` (human-readable) and `log.jsonl`
-(machine-readable). No log anywhere contains a hidden-test metric, by construction.
+Each run writes to `runs/<id>/`: `log.md` (human-readable, the one to read),
+`log.jsonl`, `ledger.jsonl`, `convergence.json`, `summary.json`, `resources.md`,
+`patches/` (the code the agent wrote) and `submission.csv`. **No log anywhere
+contains a hidden-test metric, by construction.**
+
+Committed: logs, patches, transcripts. Not committed: checkpoints (2.4 MB each),
+intermediate submissions, and anything under `raw_starter_output/`, which holds the
+organisers' unfiltered output and therefore test metrics. The scored submission is
+force-added so there is never ambiguity about which file was submitted.
+
+---
+
+## Things worth knowing before you run the agent
+
+**It has no memory across runs.** Every run starts with an empty ledger, so it
+re-derives its approach from scratch and has opened with pairwise BPR every single
+time — then rediscovers that BPR fails. That is the design: writing "BPR does not
+work here" into the method corpus would be a human changing the agent's search space,
+which is precisely what the manual-intervention count measures.
+
+**It stops after six to eight iterations, not fifty.** Three rounds without a gain
+above 0.002 ends the run however many iterations remain. The cap is a ceiling, not a
+target.
+
+**Windows specifics, if you are on it.** There is no POSIX `resource` module, so
+memory ceilings are enforced by polling RSS with psutil. Child process output goes to
+files rather than pipes, because a full pipe buffer deadlocks and looks exactly like
+an infinite loop. And captured organiser output is UTF-8 while the console is cp1252,
+so every sink opens with `encoding='utf-8'` — without it a successful experiment
+reads as a crash.
 
 ---
 
@@ -364,7 +404,7 @@ features turned out to be the first genuinely diverse blend member we found
 | `scripts/` | `verify_setup.py`, `control_run.py` (the no-LLM control), and one self-contained probe per finding. |
 | `tests/` | 350 tests. Contract, leakage, submission, causal window, guards, convergence, patch validation, determinism. |
 | `runs/` | Per-run artefacts: `log.md`, `log.jsonl`, `patches/`, `submission.csv`. |
-| `docs/` | `RESULTS.md` (every number), `HANDOVER.md` (setup and state), `OPEN_QUESTIONS.md` (D1–D22), `QUESTIONS_FOR_ORGANISERS.md`. |
+| `docs/` | `RESULTS.md` (every number and every closed direction), `OPEN_QUESTIONS.md` (decisions D1–D22), `QUESTIONS_FOR_ORGANISERS.md`. |
 
 ---
 

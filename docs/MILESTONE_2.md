@@ -31,7 +31,7 @@ It was split in two, on review:
 The point of the split is that when the two halves join, **only the seam is new**.
 Each side was already exercised on its own.
 
-Before either half was written, the seam itself was frozen in `docs/M2_CONTRACT.md`:
+Before either half was written, the seam itself was frozen (CLAUDE.md section 11.1):
 the return shape, the `error_kind` vocabulary, and the diagnostics keys. Building
 both halves and *then* agreeing how they talk turns the join into a negotiation
 between two things that already exist and neither of which wants to move.

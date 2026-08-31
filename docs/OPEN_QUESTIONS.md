@@ -219,7 +219,7 @@ config, but the config is not protected, so generated code could in principle ed
 the rule it is judged by. **Resolved.** `configs/`, `scripts/`, `harness/losses.py` and
 `harness/models/runners.py` are now on the list. Raised in external review, which
 also asked for a test asserting a patch touching a protected path is rejected — that
-test belongs with the patch validator in M2a and is listed in `docs/M2_CONTRACT.md`.
+test belongs with the patch validator in M2a.
 
 ### D7 — The train split's first row is dated 20220409, not 20220408
 

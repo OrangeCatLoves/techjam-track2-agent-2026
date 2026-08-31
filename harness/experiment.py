@@ -1,7 +1,7 @@
 """``run_experiment`` -- the only thing that crosses the harness/agent boundary.
 
 OWNS
-    - the frozen return shape from ``docs/M2_CONTRACT.md`` section 1
+    - the frozen return shape (CLAUDE.md section 11.1, interface 1)
     - the sequence: validate the patch, run it sandboxed, read the result, screen it
     - the stub, which is how the agent half is developed without waiting a minute
       per training run

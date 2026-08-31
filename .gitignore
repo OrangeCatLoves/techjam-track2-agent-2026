@@ -62,3 +62,6 @@ image.png
 /*.jpg
 /*.jpeg
 /*.gif
+
+# Presentation working material. Kept locally, never committed.
+/script.txt

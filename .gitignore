@@ -54,3 +54,11 @@ harness/features/gen/*.py
 # Local screenshots and scratch images
 image.png
 *.screenshot.png
+
+# Screenshots and images dropped at the repo root for review. These are working
+# material, not deliverables, and a `git add -A` swept three of them into a commit
+# once. Images that belong in the repo live under docs/ and are added explicitly.
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif

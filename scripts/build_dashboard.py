@@ -127,7 +127,11 @@ font:14px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 .wrap{max-width:1060px;margin:0 auto;padding:32px 20px 64px}
 h1{font-size:26px;margin:0 0 4px}
 .sub{color:var(--dim);margin-bottom:28px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+/* Six cards. auto-fit left one orphaned on a second row at common widths, which
+   reads as a mistake on a projector or in a recording. Three columns divides six
+   exactly; two on narrow screens, still exact. */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media (max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
 .card .k{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
 .card .v{font-size:28px;font-weight:650;margin-top:6px;font-variant-numeric:tabular-nums}

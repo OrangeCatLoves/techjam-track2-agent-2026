@@ -743,6 +743,43 @@ weight fixed in advance rather than tuned.
 
 `scripts/probe_gbdt.py` reproduces the table in about 6 minutes.
 
+### Item-item co-visitation — helps the tree, adds nothing to the blend
+
+The FM sees a video as an id with its own embedding; the tree sees aggregate
+rates. Neither represents "users who liked X also liked Y". Co-visitation supplies
+it:
+
+    C[i,j]     = users who long-viewed both i and j, in the causal window
+    score(u,v) = mean over j in u's prior long-views of
+                 C[v,j] / sqrt(pop[v] * pop[j])
+
+Built by the same expanding walk as `harness/features/base.py`: a row dated `d` is
+scored from a matrix and a user history holding only dates strictly before `d`,
+and only then is day `d` folded in. Coverage is 56.2% of train rows and 90.0% of
+validation rows -- validation is higher because every user arrives with a full
+train history behind them.
+
+| model | val primary |
+|---|---|
+| GBDT, 14 features | 0.5975 |
+| GBDT, 15 features with co-visitation | 0.5982 |
+| 5-seed ensemble alone | 0.6030 |
+| ensemble + GBDT *without* co-visitation | **0.6035** |
+| ensemble + GBDT *with* co-visitation | **0.6035** |
+
+**It helps the tree by +0.0007 and changes the blend by nothing** — identical to
+four decimal places. Co-visitation ranks 10th of 15 features by gain.
+
+The explanation is the FM itself. **A factorization machine's `user_id x video_id`
+cross *is* collaborative filtering** — learned rather than hand-built. Co-visitation
+is a manual reconstruction of what the FM's embeddings already encode, so it adds
+signal to a tree that has no such cross and nothing at all once the FM is in the
+blend. That is a direct confirmation of the organisers' published claim that the
+`user_id x video_id` cross already absorbs most of the learnable signal, arrived at
+from the opposite direction.
+
+`scripts/probe_covisitation.py` reproduces the table in about 5 minutes.
+
 ---
 
 ## 6. What did not work — twenty experiments

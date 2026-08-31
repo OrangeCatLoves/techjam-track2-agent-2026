@@ -145,6 +145,25 @@ pytest tests/ -m "not slow"               # 350 tests, about 8 minutes
 
 ---
 
+## Results dashboard
+
+One self-contained HTML file, generated from the run artefacts:
+
+```
+python scripts/build_dashboard.py     # writes dashboard.html
+```
+
+Open it by double-click. No server, no network, no install, no external assets.
+It shows the scoreboard, the best result per pipeline stage, and all 58 scored
+experiments -- click any row for the agent's own hypothesis, verbatim from its log.
+
+**Every figure on the page is read from `runs/*/log.jsonl`, never typed in**, so it
+cannot drift from the runs it describes. It is a view: it trains nothing and scores
+nothing. It also cannot show a hidden-test metric, because none exists in the
+artefacts it reads.
+
+---
+
 ## Running without any LLM access
 
 **A judge does not need an LLM, an API key, or a Claude subscription** to check

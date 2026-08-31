@@ -5,7 +5,11 @@
 paths:
   # Absolute path to the six KuaiRand-Pure CSVs. Overridden by KUAIRAND_DATA_DIR.
   # The starter kit scripts all accept --data_dir, so no filesystem junction is needed.
-  raw_data_dir: "C:/Users/Lenovo/track2-techjam/data/KuaiRand-Pure/data"
+  # Left EMPTY on purpose. A path here would be one contributor's machine, and
+  # a fresh clone would fail with a confusing "file not found" instead of a clear
+  # "you have not configured the data directory". Set KUAIRAND_DATA_DIR in .env
+  # (gitignored) or in the environment; see .env.example and docs/HANDOVER.md.
+  raw_data_dir: ""
   starter_dir: "starter"
   workspace_dir: "workspace"
   runs_dir: "runs"

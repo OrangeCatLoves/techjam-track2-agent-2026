@@ -1,0 +1,10 @@
+# Normalise line endings so a clone on Linux or macOS does not arrive with CRLF.
+# Development happened on Windows; without this every text file carries CRLF into
+# the repository and diffs on other platforms are whole-file noise.
+* text=auto eol=lf
+
+# Data and model artefacts are binary; never touch their bytes.
+*.npz binary
+*.csv binary
+*.png binary
+*.parquet binary

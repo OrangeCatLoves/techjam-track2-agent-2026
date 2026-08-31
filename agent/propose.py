@@ -206,7 +206,44 @@ scored as a single experiment:
 Cost scales with the number of members: three seeds is three training runs.
 `diagnostics["ensemble"]` reports each member's own score and how the blend
 compares to the best of them, so you can tell whether blending added anything or
-merely averaged."""
+merely averaged.
+
+A `features` key adds derived fields to the model. Each named feature becomes one
+extra FM field, quantile-bucketed by the harness:
+
+  features  list  names of features you registered in the patch
+
+  CONFIG = {"features": ["my_feature"]}
+
+You write a feature the same way you write a loss -- in the patch, with a
+decorator:
+
+  from harness.features.registry import register_feature
+
+  @register_feature("my_feature")
+  def build(frame, stats):
+      return some_float_array_of_length_len_frame
+
+`frame` carries what is known before the impression happens:
+
+  frame.keys("user_id" | "video_id" | "author_id" | "tab" | "dur_bucket")
+                          -> int code per row
+  frame.duration_ms, frame.date, len(frame)
+
+`stats` carries history, already restricted to a causal window by the harness --
+a train row on date d sees only train dates strictly before d, and an evaluation
+row sees the whole train period:
+
+  stats.label_rate(field)      smoothed long_view rate of this row's key,
+                               from prior dates only
+  stats.exposure_count(field)  how many prior impressions that key had
+  stats.global_rate()          the overall rate in window
+
+You cannot widen that window; the labels needed to widen it are not on either
+object. Return values are bucketed by quantile, so only the ordering of your
+feature matters, not its scale. `diagnostics["fields"]` reports every field's
+learned embedding norm, including yours, so you can see whether a new field was
+used or ignored."""
 
 
 def build_prompt(diagnosis_text: str, *, corpus: str, capabilities: Dict[str, Any],

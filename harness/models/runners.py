@@ -39,6 +39,7 @@ from harness import data as hdata
 from harness import evaluate as hevaluate
 from harness import guards
 from harness import losses as hlosses
+from harness.features import registry as fregistry
 
 #: Feature field names, in the column order of the encoded X matrix.
 FIELDS: Sequence[str] = ('user_id', 'video_id', 'author_id', 'tab', 'dur_bucket')
@@ -224,6 +225,9 @@ def train_fm(splits: Dict[str, list] | None = None,
              seed: int = 0,
              loss: str | hlosses.LossFn = 'pointwise_logloss',
              group_by: str = 'user_id',
+             features: Sequence[str] = (),
+             feature_prior: float | None = None,
+             feature_buckets: int | None = None,
              checkpoint_path: str | Path | None = None,
              with_diagnostics: bool = True,
              verbose: bool = False) -> TrainResult:
@@ -245,13 +249,19 @@ def train_fm(splits: Dict[str, list] | None = None,
     # number, which is exactly what makes them expensive to find later.
     loss_report = hlosses.check_loss(loss_fn, kind=hlosses.loss_kind(loss))
 
-    enc, dim = hdata.encode(splits)
+    enc, dim, feature_names = fregistry.encode_with_features(
+        splits, features, prior=feature_prior, n_buckets=feature_buckets)
     Xtr, ytr, _ = enc['train']
     Xva, yva, uva = enc['valid']
 
     groups_tr = build_groups(splits, 'train', group_by)
 
     model = PluggableFM(dim, k=k, lr=lr, l2=l2, seed=seed)
+    # Scoring a features model on an un-augmented matrix does not raise -- the FM
+    # sums over whatever fields it is given and returns plausible numbers for the
+    # wrong ranking. Recording the width makes that mismatch loud instead.
+    model.n_fields = int(Xtr.shape[1])
+    model.feature_names = list(feature_names)
     rng = np.random.default_rng(seed)
 
     started = time.time()
@@ -296,6 +306,9 @@ def train_fm(splits: Dict[str, list] | None = None,
     final = hevaluate.evaluate(uva, yva, model.predict(Xva))
     seconds = time.time() - started
 
+    diagnostics_features = {'names': list(feature_names),
+                            'n_fields': int(Xtr.shape[1])}
+
     # The leak canary, on the only score that can select anything.
     guards.check_canary(float(final['primary']),
                         context={'runner': 'train_fm', 'seed': seed,
@@ -335,6 +348,10 @@ def train_fm(splits: Dict[str, list] | None = None,
             'objective': {'kind': loss_report.get('kind'),
                           'name': loss if isinstance(loss, str)
                           else getattr(loss_fn, '__name__', 'callable')},
+            # Which causal features were in play, and how wide the design matrix
+            # ended up. The agent needs both to reason about whether a feature
+            # earned its field, and the submission path needs the names.
+            'features': diagnostics_features,
         }
         guards.assert_record_clean(diagnostics, where='train_fm diagnostics')
 
@@ -592,9 +609,14 @@ def train_ensemble(splits: Dict[str, list] | None = None,
     if checkpoint_path is not None:
         path = Path(checkpoint_path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        # The members all share one feature list, so it is stored once on the
+        # blend. Without it the restored ensemble scores on the wrong width.
+        member_features = list(getattr(states[0], 'feature_names', []) or [])
         np.savez_compressed(
             path, ensemble=np.array(1),
             normalise=np.array(normalise), dim=np.array(dim),
+            feature_names=np.array(member_features, dtype=object),
+            n_fields=np.int32(getattr(states[0], 'n_fields', 0)),
             weights=np.array(weights if weights is not None
                              else [1.0] * len(states), dtype=np.float64),
             **{f'V{i}': m.V for i, m in enumerate(states)},
@@ -616,18 +638,38 @@ def load_checkpoint_state(member: TrainResult):
     """Rebuild a member model from the checkpoint a train_fm call saved."""
     if not member.checkpoint:
         raise ValueError('ensemble members must be trained with a checkpoint_path')
-    blob = np.load(member.checkpoint)
+    blob = np.load(member.checkpoint, allow_pickle=True)
     model = PluggableFM(blob['V'].shape[0], k=blob['V'].shape[1])
     model.V, model.W, model.b = blob['V'], blob['W'], np.float32(blob['b'])
+    _restore_feature_meta(model, blob, set(blob.files))
     return model
 
 
 def save_checkpoint(model, path: str | Path) -> Path:
-    """Persist the trainable parameters. Nothing about the test split is stored."""
+    """Persist the trainable parameters. Nothing about the test split is stored.
+
+    The feature list travels with the weights. Without it a restored features
+    model would be scored on a five-field design matrix: the embedding lookup
+    still succeeds, it just sums the wrong number of fields and returns a
+    plausible, wrong ranking. That is the same class of bug as the ensemble
+    checkpoint that could not be submitted, so it is closed the same way.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(path, V=model.V, W=model.W, b=np.float32(model.b))
+    np.savez_compressed(
+        path, V=model.V, W=model.W, b=np.float32(model.b),
+        feature_names=np.array(list(getattr(model, 'feature_names', []) or []),
+                               dtype=object),
+        n_fields=np.int32(getattr(model, 'n_fields', 0)))
     return path
+
+
+def _restore_feature_meta(model, blob, names) -> None:
+    """Put the feature list back on a restored model, when the file carries one."""
+    if 'feature_names' in names:
+        model.feature_names = [str(x) for x in blob['feature_names'].tolist()]
+    if 'n_fields' in names and int(blob['n_fields']) > 0:
+        model.n_fields = int(blob['n_fields'])
 
 
 class EnsemblePredictor:
@@ -666,7 +708,7 @@ def load_checkpoint(path: str | Path, dim: int, k: int = 16, **kwargs):
     ``KeyError: 'V is not a file in the archive'`` and could not be submitted at
     all.
     """
-    blob = np.load(Path(path), allow_pickle=False)
+    blob = np.load(Path(path), allow_pickle=True)
     names = set(blob.files)
 
     if 'ensemble' in names:
@@ -681,10 +723,13 @@ def load_checkpoint(path: str | Path, dim: int, k: int = 16, **kwargs):
                    else [1.0] * count)
         normalise = (str(blob['normalise']) if 'normalise' in names
                      else 'within_user_rank')
-        return EnsemblePredictor(members, weights, normalise)
+        predictor = EnsemblePredictor(members, weights, normalise)
+        _restore_feature_meta(predictor, blob, names)
+        return predictor
 
     model = PluggableFM(blob['V'].shape[0], k=blob['V'].shape[1], **kwargs)
     model.V, model.W, model.b = blob['V'], blob['W'], np.float32(blob['b'])
+    _restore_feature_meta(model, blob, names)
     return model
 
 
@@ -699,8 +744,15 @@ def score_split(model, splits: Dict[str, list], split: str,
     selected on validation.
     """
     if enc is None:
-        enc, _ = hdata.encode(splits)
+        enc, _, _ = fregistry.encode_with_features(
+            splits, getattr(model, 'feature_names', ()) or ())
     X = enc[split][0]
+    expected = getattr(model, 'n_fields', None)
+    if expected is not None and X.shape[1] != expected:
+        raise ValueError(
+            f'model was trained on {expected} fields but this design matrix has '
+            f'{X.shape[1]}. Scoring would silently rank by the wrong thing. Pass '
+            f'the same features= used for training.')
     if isinstance(model, EnsemblePredictor):
         return model.predict_blended(X, build_groups(splits, split, 'user_id'))
     return model.predict(X)
